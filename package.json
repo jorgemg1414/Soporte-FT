@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev:frontend": "vite",
+    "dev:frontend": "vite --host",
     "dev:backend": "cd backend && node --watch src/index.js",
     "dev": "concurrently \"npm run dev:backend\" \"npm run dev:frontend\"",
     "build": "vite build",
@@ -11,12 +11,14 @@
   },
   "dependencies": {
     "@quasar/extras": "^1.16.12",
+    "apexcharts": "^5.10.4",
     "axios": "^1.6.8",
     "date-fns": "^3.3.1",
     "pinia": "^2.1.7",
     "quasar": "^2.16.5",
     "vue": "^3.4.21",
-    "vue-router": "^4.3.0"
+    "vue-router": "^4.3.0",
+    "vue3-apexcharts": "^1.11.1"
   },
   "devDependencies": {
     "@quasar/vite-plugin": "^1.7.0",

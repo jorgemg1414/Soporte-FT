@@ -13,8 +13,11 @@ router.use(authenticate)
 function applyTicketJoins(ticket, store) {
   return {
     ...ticket,
-    sucursales: store.sucursales.find(s => s.id === ticket.sucursal_id) || null,
-    profiles:   store.profiles.find(p => p.id === ticket.usuario_id)   || null
+    sucursales:   store.sucursales.find(s => s.id === ticket.sucursal_id)      || null,
+    profiles:     store.profiles.find(p => p.id === ticket.usuario_id)         || null,
+    resuelto_por: ticket.resuelto_por_id
+      ? store.profiles.find(p => p.id === ticket.resuelto_por_id) || null
+      : null
   }
 }
 
@@ -64,39 +67,68 @@ router.get('/', async (req, res) => {
 // ─── GET /api/tickets/stats ──────────────────────────────────────────────────
 router.get('/stats', async (req, res) => {
   try {
+    let tickets
+
     if (isMock) {
       const store = getStore()
-      let tickets = store.tickets
-
+      tickets = store.tickets
       if (req.user.rol === 'encargada') {
         tickets = tickets.filter(t => t.sucursal_id === req.user.sucursal_id)
       }
-
-      return res.json({
-        total:     tickets.length,
-        abiertos:  tickets.filter(t => t.estado === 'abierto').length,
-        en_proceso:tickets.filter(t => t.estado === 'en_proceso').length,
-        resueltos: tickets.filter(t => t.estado === 'resuelto').length,
-        cerrados:  tickets.filter(t => t.estado === 'cerrado').length
-      })
+      // Enriquecer con nombre de sucursal para mock
+      tickets = tickets.map(t => ({
+        ...t,
+        sucursal_nombre: store.sucursales.find(s => s.id === t.sucursal_id)?.nombre || '—'
+      }))
+    } else {
+      let query = supabase.from('tickets').select('estado, categoria, sucursal_id, created_at, sucursales(nombre)')
+      if (req.user.rol === 'encargada') query = query.eq('sucursal_id', req.user.sucursal_id)
+      const { data, error } = await query
+      if (error) throw error
+      tickets = (data || []).map(t => ({ ...t, sucursal_nombre: t.sucursales?.nombre || '—' }))
     }
 
-    // Supabase
-    let query = supabase.from('tickets').select('estado')
-    if (req.user.rol === 'encargada') {
-      query = query.eq('sucursal_id', req.user.sucursal_id)
+    // ── Por estado ──
+    const estados = { abiertos: 0, en_proceso: 0, resueltos: 0, cerrados: 0 }
+    tickets.forEach(t => {
+      if (t.estado === 'abierto')    estados.abiertos++
+      if (t.estado === 'en_proceso') estados.en_proceso++
+      if (t.estado === 'resuelto')   estados.resueltos++
+      if (t.estado === 'cerrado')    estados.cerrados++
+    })
+
+    // ── Por categoría ──
+    const catMap = {}
+    tickets.forEach(t => { catMap[t.categoria] = (catMap[t.categoria] || 0) + 1 })
+    const por_categoria = Object.entries(catMap).map(([cat, count]) => ({ categoria: cat, total: count }))
+
+    // ── Por sucursal (top 10) ──
+    const sucMap = {}
+    tickets.forEach(t => { sucMap[t.sucursal_nombre] = (sucMap[t.sucursal_nombre] || 0) + 1 })
+    const por_sucursal = Object.entries(sucMap)
+      .map(([nombre, total]) => ({ nombre, total }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 10)
+
+    // ── Por día (últimos 14 días) ──
+    const hoy = new Date()
+    const diasMap = {}
+    for (let i = 13; i >= 0; i--) {
+      const d = new Date(hoy); d.setDate(hoy.getDate() - i)
+      diasMap[d.toISOString().slice(0, 10)] = 0
     }
+    tickets.forEach(t => {
+      const dia = t.created_at?.slice(0, 10)
+      if (dia && diasMap[dia] !== undefined) diasMap[dia]++
+    })
+    const por_dia = Object.entries(diasMap).map(([fecha, total]) => ({ fecha, total }))
 
-    const { data, error } = await query
-    if (error) throw error
-
-    const tickets = data || []
     return res.json({
-      total:     tickets.length,
-      abiertos:  tickets.filter(t => t.estado === 'abierto').length,
-      en_proceso:tickets.filter(t => t.estado === 'en_proceso').length,
-      resueltos: tickets.filter(t => t.estado === 'resuelto').length,
-      cerrados:  tickets.filter(t => t.estado === 'cerrado').length
+      total: tickets.length,
+      ...estados,
+      por_categoria,
+      por_sucursal,
+      por_dia
     })
 
   } catch (err) {
@@ -239,7 +271,10 @@ router.put('/:id/estado', requireRole('soporte', 'admin'), async (req, res) => {
       if (idx === -1) return res.status(404).json({ error: 'Ticket no encontrado' })
 
       const now = new Date().toISOString()
-      store.tickets[idx] = { ...store.tickets[idx], estado, updated_at: now }
+      const extra = {}
+      if (estado === 'resuelto') extra.resuelto_por_id = req.user.sub
+      if (estado === 'abierto')  extra.resuelto_por_id = null
+      store.tickets[idx] = { ...store.tickets[idx], estado, updated_at: now, ...extra }
 
       store.historial_tickets.push({
         id:         genId(),

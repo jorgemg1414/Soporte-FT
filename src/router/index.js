@@ -12,10 +12,29 @@ const routes = [
     component: () => import('../layouts/MainLayout.vue'),
     meta: { requiresAuth: true },
     children: [
-      { path: '', redirect: '/dashboard' },
+      {
+        path: '',
+        redirect: to => {
+          const authStore = useAuthStore()
+          const rol = authStore.profile?.rol
+          if (rol === 'encargada') return '/sucursal'
+          return '/panel'
+        }
+      },
+      {
+        path: 'sucursal',
+        component: () => import('../pages/SucursalPage.vue'),
+        meta: { roles: ['encargada'] }
+      },
+      {
+        path: 'panel',
+        component: () => import('../pages/PanelPage.vue'),
+        meta: { roles: ['admin', 'soporte'] }
+      },
       {
         path: 'dashboard',
-        component: () => import('../pages/DashboardPage.vue')
+        component: () => import('../pages/DashboardPage.vue'),
+        meta: { roles: ['admin', 'soporte'] }
       },
       {
         path: 'tickets',
@@ -57,14 +76,18 @@ router.beforeEach(async (to) => {
   }
 
   if (to.meta.public) {
-    if (authStore.user) return '/dashboard'
+    if (authStore.user) {
+      const rol = authStore.profile?.rol
+      return rol === 'encargada' ? '/sucursal' : '/panel'
+    }
     return true
   }
 
   if (!authStore.user) return '/login'
 
   if (to.meta.roles && !to.meta.roles.includes(authStore.profile?.rol)) {
-    return '/dashboard'
+    const rol = authStore.profile?.rol
+    return rol === 'encargada' ? '/sucursal' : '/panel'
   }
 
   return true

@@ -14,8 +14,89 @@
     </div>
 
     <div class="row q-col-gutter-md">
+      <!-- Columna lateral primero en móvil si es soporte/admin -->
+      <div class="col-12 col-md-4 order-last order-md-first"
+        v-if="authStore.profile?.rol === 'soporte' || authStore.profile?.rol === 'admin'">
+        <q-card bordered class="q-mb-md">
+          <q-card-section>
+            <div class="text-h6 q-mb-md">Gestionar Ticket</div>
+            <div class="row q-gutter-xs">
+              <q-btn v-for="accion in accionesEstado" :key="accion.value"
+                :label="accion.label" :color="accion.color" :icon="accion.icon"
+                :disable="ticket.estado === accion.value"
+                unelevated class="col"
+                :loading="cambiandoEstado" @click="cambiarEstado(accion.value)"
+                size="sm" />
+            </div>
+          </q-card-section>
+        </q-card>
+
+        <q-card bordered class="q-mb-md">
+          <q-card-section>
+            <div class="text-h6 q-mb-sm">Detalles</div>
+            <q-list dense>
+              <q-item>
+                <q-item-section>
+                  <q-item-label caption class="text-grey-6">Folio</q-item-label>
+                  <q-item-label class="text-primary text-weight-bold">{{ ticket.folio }}</q-item-label>
+                </q-item-section>
+              </q-item>
+              <q-item>
+                <q-item-section>
+                  <q-item-label caption class="text-grey-6">Sucursal</q-item-label>
+                  <q-item-label>{{ ticket.sucursales?.nombre }}</q-item-label>
+                </q-item-section>
+              </q-item>
+              <q-item>
+                <q-item-section>
+                  <q-item-label caption class="text-grey-6">Reportado por</q-item-label>
+                  <q-item-label>{{ ticket.profiles?.nombre }}</q-item-label>
+                </q-item-section>
+              </q-item>
+              <q-item v-if="ticket.resuelto_por">
+                <q-item-section>
+                  <q-item-label caption class="text-positive">Resuelto por</q-item-label>
+                  <q-item-label class="text-positive text-weight-bold">{{ ticket.resuelto_por?.nombre }}</q-item-label>
+                </q-item-section>
+              </q-item>
+              <q-item>
+                <q-item-section>
+                  <q-item-label caption class="text-grey-6">Creado</q-item-label>
+                  <q-item-label>{{ formatDate(ticket.created_at) }}</q-item-label>
+                </q-item-section>
+              </q-item>
+              <q-item>
+                <q-item-section>
+                  <q-item-label caption class="text-grey-6">Actualizado</q-item-label>
+                  <q-item-label>{{ formatDate(ticket.updated_at) }}</q-item-label>
+                </q-item-section>
+              </q-item>
+            </q-list>
+          </q-card-section>
+        </q-card>
+
+        <q-card bordered>
+          <q-card-section>
+            <div class="text-h6 q-mb-sm"><q-icon name="history" class="q-mr-xs" color="primary" />Historial</div>
+          </q-card-section>
+          <q-separator />
+          <q-timeline color="primary" class="q-pa-md">
+            <q-timeline-entry v-for="h in historial" :key="h.id" :subtitle="formatDate(h.created_at)">
+              <template #title>
+                <span class="text-body2 text-weight-medium">{{ h.accion }}</span>
+              </template>
+              <div class="text-grey-6 text-caption">{{ h.detalle }}</div>
+            </q-timeline-entry>
+            <q-timeline-entry v-if="historial.length === 0">
+              <template #title><span class="text-grey-5">Sin historial</span></template>
+            </q-timeline-entry>
+          </q-timeline>
+        </q-card>
+      </div>
+
       <!-- Columna principal -->
-      <div class="col-12 col-md-8">
+      <div class="col-12 col-md-8"
+        :class="authStore.profile?.rol === 'soporte' || authStore.profile?.rol === 'admin' ? '' : 'col-md-12'">
         <q-card bordered class="q-mb-md">
           <q-card-section>
             <div class="row items-center q-mb-md">
@@ -109,78 +190,6 @@
         </q-card>
       </div>
 
-      <!-- Columna lateral -->
-      <div class="col-12 col-md-4">
-        <q-card bordered class="q-mb-md"
-          v-if="authStore.profile?.rol === 'soporte' || authStore.profile?.rol === 'admin'">
-          <q-card-section>
-            <div class="text-h6 q-mb-md">Gestionar Ticket</div>
-            <div class="column q-gutter-sm">
-              <q-btn v-for="accion in accionesEstado" :key="accion.value"
-                :label="accion.label" :color="accion.color" :icon="accion.icon"
-                :disable="ticket.estado === accion.value"
-                unelevated class="full-width"
-                :loading="cambiandoEstado" @click="cambiarEstado(accion.value)" />
-            </div>
-          </q-card-section>
-        </q-card>
-
-        <q-card bordered class="q-mb-md">
-          <q-card-section>
-            <div class="text-h6 q-mb-sm">Detalles</div>
-            <q-list dense>
-              <q-item>
-                <q-item-section>
-                  <q-item-label caption class="text-grey-6">Folio interno</q-item-label>
-                  <q-item-label class="text-primary text-weight-bold">{{ ticket.folio }}</q-item-label>
-                </q-item-section>
-              </q-item>
-              <q-item>
-                <q-item-section>
-                  <q-item-label caption class="text-grey-6">Sucursal</q-item-label>
-                  <q-item-label>{{ ticket.sucursales?.nombre }}</q-item-label>
-                </q-item-section>
-              </q-item>
-              <q-item>
-                <q-item-section>
-                  <q-item-label caption class="text-grey-6">Reportado por</q-item-label>
-                  <q-item-label>{{ ticket.profiles?.nombre }}</q-item-label>
-                </q-item-section>
-              </q-item>
-              <q-item>
-                <q-item-section>
-                  <q-item-label caption class="text-grey-6">Fecha de creación</q-item-label>
-                  <q-item-label>{{ formatDate(ticket.created_at) }}</q-item-label>
-                </q-item-section>
-              </q-item>
-              <q-item>
-                <q-item-section>
-                  <q-item-label caption class="text-grey-6">Última actualización</q-item-label>
-                  <q-item-label>{{ formatDate(ticket.updated_at) }}</q-item-label>
-                </q-item-section>
-              </q-item>
-            </q-list>
-          </q-card-section>
-        </q-card>
-
-        <q-card bordered>
-          <q-card-section>
-            <div class="text-h6 q-mb-sm"><q-icon name="history" class="q-mr-xs" color="primary" />Historial</div>
-          </q-card-section>
-          <q-separator />
-          <q-timeline color="primary" class="q-pa-md">
-            <q-timeline-entry v-for="h in historial" :key="h.id" :subtitle="formatDate(h.created_at)">
-              <template #title>
-                <span class="text-body2 text-weight-medium">{{ h.accion }}</span>
-              </template>
-              <div class="text-grey-6 text-caption">{{ h.detalle }}</div>
-            </q-timeline-entry>
-            <q-timeline-entry v-if="historial.length === 0">
-              <template #title><span class="text-grey-5">Sin historial</span></template>
-            </q-timeline-entry>
-          </q-timeline>
-        </q-card>
-      </div>
     </div>
   </q-page>
 

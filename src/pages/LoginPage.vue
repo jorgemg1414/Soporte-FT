@@ -85,8 +85,9 @@ async function handleLogin() {
   loading.value = true
   try {
     const email = usuario.value.trim().toLowerCase() + '@ft.com'
-    await authStore.login(email, password.value)
-    router.push('/dashboard')
+    const data = await authStore.login(email, password.value)
+    const rol = data.user?.rol
+    router.push(rol === 'encargada' ? '/sucursal' : '/panel')
   } catch {
     $q.notify({ type: 'negative', message: 'Usuario o contraseña incorrectos' })
   } finally {
