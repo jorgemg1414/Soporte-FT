@@ -1,52 +1,48 @@
 import { Router } from 'express'
 import { isMock, supabase } from '../lib/supabase.js'
-import { getStore, saveStore, generateFolio, genId } from '../data/mock.js'
+import db, { generateFolio, genId } from '../lib/database.js'
 import { authenticate, requireRole } from '../middleware/auth.js'
 import { crearNotificacion } from './notificaciones.routes.js'
 
 const router = Router()
 
-// Todos los endpoints requieren autenticación
 router.use(authenticate)
 
-// ─── Helpers para el mock ────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function applyTicketJoins(ticket, store) {
-  const suc = store.sucursales.find(s => s.id === ticket.sucursal_id) || null
+function ticketWithJoins(t) {
+  if (!t) return null
+  const suc = t.sucursal_id ? db.prepare('SELECT id, nombre FROM sucursales WHERE id = ?').get(t.sucursal_id) : null
+  const profile = t.usuario_id ? db.prepare('SELECT id, nombre, rol FROM profiles WHERE id = ?').get(t.usuario_id) : null
+  const resuelto = t.resuelto_por_id ? db.prepare('SELECT id, nombre FROM profiles WHERE id = ?').get(t.resuelto_por_id) : null
   return {
-    ...ticket,
-    sucursales:   suc ? { id: suc.id, nombre: suc.nombre } : null,
-    profiles:     store.profiles.find(p => p.id === ticket.usuario_id)         || null,
-    resuelto_por: ticket.resuelto_por_id
-      ? store.profiles.find(p => p.id === ticket.resuelto_por_id) || null
-      : null
+    ...t,
+    urgente: !!t.urgente,
+    adjuntos: JSON.parse(t.adjuntos || '[]'),
+    sucursales: suc || null,
+    profiles: profile || null,
+    resuelto_por: resuelto || null
   }
 }
 
-function applyComentarioJoins(comentario, store) {
-  const profile = store.profiles.find(p => p.id === comentario.usuario_id) || null
-  return { ...comentario, profiles: profile }
+function commentWithJoins(c) {
+  const profile = db.prepare('SELECT id, nombre, rol FROM profiles WHERE id = ?').get(c.usuario_id)
+  return { ...c, profiles: profile || null }
 }
 
-// ─── GET /api/tickets ────────────────────────────────────────────────────────
+// ─── GET /api/tickets ─────────────────────────────────────────────────────────
 router.get('/', async (req, res) => {
   try {
     if (isMock) {
-      const store = getStore()
-      let tickets = store.tickets
-
+      let tickets
       if (req.user.rol === 'encargada') {
-        tickets = tickets.filter(t => t.sucursal_id === req.user.sucursal_id)
+        tickets = db.prepare('SELECT * FROM tickets WHERE sucursal_id = ? ORDER BY created_at DESC').all(req.user.sucursal_id)
+      } else {
+        tickets = db.prepare('SELECT * FROM tickets ORDER BY created_at DESC').all()
       }
-
-      // Ordenar por created_at descendente
-      tickets = [...tickets].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-
-      const withJoins = tickets.map(t => applyTicketJoins(t, store))
-      return res.json(withJoins)
+      return res.json(tickets.map(ticketWithJoins))
     }
 
-    // Supabase
     let query = supabase
       .from('tickets')
       .select('*, sucursales(nombre), profiles(nombre)')
@@ -66,24 +62,27 @@ router.get('/', async (req, res) => {
   }
 })
 
-// ─── GET /api/tickets/stats ──────────────────────────────────────────────────
+// ─── GET /api/tickets/stats ───────────────────────────────────────────────────
 router.get('/stats', async (req, res) => {
   try {
     let tickets
 
     if (isMock) {
-      const store = getStore()
-      tickets = store.tickets
       if (req.user.rol === 'encargada') {
-        tickets = tickets.filter(t => t.sucursal_id === req.user.sucursal_id)
+        tickets = db.prepare('SELECT * FROM tickets WHERE sucursal_id = ?').all(req.user.sucursal_id)
+      } else {
+        tickets = db.prepare('SELECT * FROM tickets').all()
       }
-      tickets = tickets.map(t => ({
-        ...t,
-        sucursal_nombre:    store.sucursales.find(s => s.id === t.sucursal_id)?.nombre || '—',
-        resuelto_por_nombre: t.resuelto_por_id
-          ? store.profiles.find(p => p.id === t.resuelto_por_id)?.nombre || '—'
-          : null
-      }))
+      tickets = tickets.map(t => {
+        const suc = t.sucursal_id ? db.prepare('SELECT nombre FROM sucursales WHERE id = ?').get(t.sucursal_id) : null
+        const res_por = t.resuelto_por_id ? db.prepare('SELECT nombre FROM profiles WHERE id = ?').get(t.resuelto_por_id) : null
+        return {
+          ...t,
+          urgente: !!t.urgente,
+          sucursal_nombre: suc?.nombre || '—',
+          resuelto_por_nombre: res_por?.nombre || null
+        }
+      })
     } else {
       let query = supabase.from('tickets').select('estado, categoria, sucursal_id, created_at, sucursales(nombre)')
       if (req.user.rol === 'encargada') query = query.eq('sucursal_id', req.user.sucursal_id)
@@ -101,12 +100,10 @@ router.get('/stats', async (req, res) => {
       if (t.estado === 'cerrado')    estados.cerrados++
     })
 
-    // ── Por categoría ──
     const catMap = {}
     tickets.forEach(t => { catMap[t.categoria] = (catMap[t.categoria] || 0) + 1 })
     const por_categoria = Object.entries(catMap).map(([cat, count]) => ({ categoria: cat, total: count }))
 
-    // ── Por sucursal (top 10) ──
     const sucMap = {}
     tickets.forEach(t => { sucMap[t.sucursal_nombre] = (sucMap[t.sucursal_nombre] || 0) + 1 })
     const por_sucursal = Object.entries(sucMap)
@@ -114,7 +111,6 @@ router.get('/stats', async (req, res) => {
       .sort((a, b) => b.total - a.total)
       .slice(0, 10)
 
-    // ── Por día (últimos 14 días) ──
     const hoy = new Date()
     const diasMap = {}
     for (let i = 13; i >= 0; i--) {
@@ -127,7 +123,6 @@ router.get('/stats', async (req, res) => {
     })
     const por_dia = Object.entries(diasMap).map(([fecha, total]) => ({ fecha, total }))
 
-    // ── Tiempo promedio de resolución (horas) ──
     const resueltos = tickets.filter(t => t.estado === 'resuelto' && t.resuelto_at && t.created_at)
     let tiempo_promedio_horas = null
     if (resueltos.length > 0) {
@@ -135,10 +130,8 @@ router.get('/stats', async (req, res) => {
       tiempo_promedio_horas = Math.round((totalMs / resueltos.length / 3600000) * 10) / 10
     }
 
-    // ── Tickets urgentes (solo marcados manualmente) ──
-    const tickets_urgentes = tickets.filter(t => t.urgente === true).length
+    const tickets_urgentes = tickets.filter(t => t.urgente === true || t.urgente === 1).length
 
-    // ── Por técnico (tickets resueltos) ──
     const tecnicoMap = {}
     tickets.forEach(t => {
       if (t.estado === 'resuelto' && t.resuelto_por_nombre) {
@@ -179,7 +172,6 @@ function sanitizeTicketData(body) {
   const clean = {}
   for (const key of TICKET_ALLOWED_FIELDS) {
     if (body[key] !== undefined) {
-      // Truncar strings largos
       if (typeof body[key] === 'string' && body[key].length > MAX_TEXT_LENGTH) {
         clean[key] = body[key].slice(0, MAX_TEXT_LENGTH)
       } else {
@@ -190,49 +182,40 @@ function sanitizeTicketData(body) {
   return clean
 }
 
-// ─── POST /api/tickets ───────────────────────────────────────────────────────
+// ─── POST /api/tickets ────────────────────────────────────────────────────────
 router.post('/', requireRole('encargada', 'admin'), async (req, res) => {
   try {
     const ticketData = sanitizeTicketData(req.body)
 
-    // Validar categoría
     if (!ticketData.categoria || !CATEGORIAS_VALIDAS.includes(ticketData.categoria)) {
       return res.status(400).json({ error: 'Categoría inválida' })
     }
 
     if (isMock) {
-      const store  = getStore()
-      const folio  = generateFolio()
-      const now    = new Date().toISOString()
-      const newId  = genId()
+      const folio = generateFolio()
+      const now   = new Date().toISOString()
+      const newId = genId()
 
-      const newTicket = {
-        id:           newId,
-        folio,
-        created_at:   now,
-        updated_at:   now,
-        estado:       'abierto',
-        urgente:      false,
-        usuario_id:   req.user.sub,
-        sucursal_id:  req.user.sucursal_id,
-        ...ticketData
-      }
+      db.prepare(`INSERT INTO tickets
+        (id, folio, urgente, titulo, categoria, tipo_documento, folio_pvwin, folio_correcto,
+         descripcion, detalle_falla, tipo_falla, tipo_traspaso, foto_cancelar, foto_correcto,
+         estado, sucursal_id, usuario_id, asignado_a, adjuntos, created_at, updated_at)
+        VALUES (?,?,0,?,?,?,?,?,?,?,?,?,?,?,'abierto',?,?,null,'[]',?,?)`
+      ).run(
+        newId, folio,
+        ticketData.titulo || '', ticketData.categoria,
+        ticketData.tipo_documento || null, ticketData.folio_pvwin || null, ticketData.folio_correcto || null,
+        ticketData.descripcion || '', ticketData.detalle_falla || null, ticketData.tipo_falla || null,
+        ticketData.tipo_traspaso || null, ticketData.foto_cancelar || null, ticketData.foto_correcto || null,
+        req.user.sucursal_id, req.user.sub,
+        now, now
+      )
 
-      store.tickets.push(newTicket)
+      db.prepare('INSERT INTO historial_tickets (id, ticket_id, usuario_id, accion, detalle, created_at) VALUES (?,?,?,?,?,?)')
+        .run(genId(), newId, req.user.sub, 'Ticket creado', `Reporte ${folio} creado por ${req.user.nombre}`, now)
 
-      store.historial_tickets.push({
-        id:         genId(),
-        ticket_id:  newId,
-        usuario_id: req.user.sub,
-        accion:     'Ticket creado',
-        detalle:    `Reporte ${folio} creado por ${req.user.nombre}`,
-        created_at: now
-      })
-
-      saveStore(store)
-
-      const withJoins = applyTicketJoins(newTicket, store)
-      return res.status(201).json(withJoins)
+      const newTicket = db.prepare('SELECT * FROM tickets WHERE id = ?').get(newId)
+      return res.status(201).json(ticketWithJoins(newTicket))
     }
 
     // Supabase
@@ -241,22 +224,15 @@ router.post('/', requireRole('encargada', 'admin'), async (req, res) => {
 
     const { data, error } = await supabase
       .from('tickets')
-      .insert({
-        ...ticketData,
-        folio:       folioData,
-        usuario_id:  req.user.sub,
-        sucursal_id: req.user.sucursal_id
-      })
+      .insert({ ...ticketData, folio: folioData, usuario_id: req.user.sub, sucursal_id: req.user.sucursal_id })
       .select('*, sucursales(nombre), profiles(nombre)')
       .single()
 
     if (error) throw error
 
     await supabase.from('historial_tickets').insert({
-      ticket_id:  data.id,
-      usuario_id: req.user.sub,
-      accion:     'Ticket creado',
-      detalle:    `Reporte ${data.folio} creado por ${req.user.nombre}`
+      ticket_id: data.id, usuario_id: req.user.sub,
+      accion: 'Ticket creado', detalle: `Reporte ${data.folio} creado por ${req.user.nombre}`
     })
 
     return res.status(201).json(data)
@@ -267,37 +243,28 @@ router.post('/', requireRole('encargada', 'admin'), async (req, res) => {
   }
 })
 
-// ─── GET /api/tickets/:id ────────────────────────────────────────────────────
+// ─── GET /api/tickets/:id ─────────────────────────────────────────────────────
 router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params
 
     if (isMock) {
-      const store  = getStore()
-      const ticket = store.tickets.find(t => t.id === id)
+      const ticket = db.prepare('SELECT * FROM tickets WHERE id = ?').get(id)
       if (!ticket) return res.status(404).json({ error: 'Ticket no encontrado' })
 
-      // Encargada solo puede ver sus propios tickets
       if (req.user.rol === 'encargada' && ticket.sucursal_id !== req.user.sucursal_id) {
         return res.status(403).json({ error: 'Sin permisos' })
       }
 
-      return res.json(applyTicketJoins(ticket, store))
+      return res.json(ticketWithJoins(ticket))
     }
 
-    // Supabase
     const { data, error } = await supabase
-      .from('tickets')
-      .select('*, sucursales(nombre), profiles(nombre)')
-      .eq('id', id)
-      .single()
-
+      .from('tickets').select('*, sucursales(nombre), profiles(nombre)').eq('id', id).single()
     if (error) return res.status(404).json({ error: 'Ticket no encontrado' })
-
     if (req.user.rol === 'encargada' && data.sucursal_id !== req.user.sucursal_id) {
       return res.status(403).json({ error: 'Sin permisos' })
     }
-
     return res.json(data)
 
   } catch (err) {
@@ -306,7 +273,7 @@ router.get('/:id', async (req, res) => {
   }
 })
 
-// ─── PUT /api/tickets/:id/estado ─────────────────────────────────────────────
+// ─── PUT /api/tickets/:id/estado ──────────────────────────────────────────────
 router.put('/:id/estado', requireRole('soporte', 'admin'), async (req, res) => {
   try {
     const { id } = req.params
@@ -317,50 +284,38 @@ router.put('/:id/estado', requireRole('soporte', 'admin'), async (req, res) => {
       return res.status(400).json({ error: 'Estado inválido' })
     }
 
-    const estadoLabels = {
-      abierto:    'Abierto',
-      en_proceso: 'En Proceso',
-      resuelto:   'Resuelto',
-      cerrado:    'Cerrado'
-    }
+    const estadoLabels = { abierto: 'Abierto', en_proceso: 'En Proceso', resuelto: 'Resuelto', cerrado: 'Cerrado' }
 
     if (isMock) {
-      const store = getStore()
-      const idx   = store.tickets.findIndex(t => t.id === id)
-      if (idx === -1) return res.status(404).json({ error: 'Ticket no encontrado' })
+      const ticket = db.prepare('SELECT * FROM tickets WHERE id = ?').get(id)
+      if (!ticket) return res.status(404).json({ error: 'Ticket no encontrado' })
 
       const now = new Date().toISOString()
-      const extra = {}
-      if (estado === 'resuelto') { extra.resuelto_por_id = req.user.sub; extra.resuelto_at = now }
-      if (estado === 'abierto')  { extra.resuelto_por_id = null; extra.resuelto_at = null }
-      store.tickets[idx] = { ...store.tickets[idx], estado, updated_at: now, ...extra }
+      let resuelto_por_id = ticket.resuelto_por_id
+      let resuelto_at = ticket.resuelto_at
+      if (estado === 'resuelto') { resuelto_por_id = req.user.sub; resuelto_at = now }
+      if (estado === 'abierto')  { resuelto_por_id = null; resuelto_at = null }
 
-      store.historial_tickets.push({
-        id:         genId(),
-        ticket_id:  id,
-        usuario_id: req.user.sub,
-        accion:     'Estado actualizado',
-        detalle:    `Estado cambiado a: ${estadoLabels[estado]}`,
-        created_at: now
-      })
+      db.prepare('UPDATE tickets SET estado=?, updated_at=?, resuelto_por_id=?, resuelto_at=? WHERE id=?')
+        .run(estado, now, resuelto_por_id, resuelto_at, id)
 
-      // Notificar al creador del ticket sobre el cambio de estado
-      const ticketObj = store.tickets[idx]
-      if (ticketObj.usuario_id && ticketObj.usuario_id !== req.user.sub) {
-        crearNotificacion(store, {
-          usuario_id: ticketObj.usuario_id,
+      db.prepare('INSERT INTO historial_tickets (id, ticket_id, usuario_id, accion, detalle, created_at) VALUES (?,?,?,?,?,?)')
+        .run(genId(), id, req.user.sub, 'Estado actualizado', `Estado cambiado a: ${estadoLabels[estado]}`, now)
+
+      // Notificar al creador
+      if (ticket.usuario_id && ticket.usuario_id !== req.user.sub) {
+        crearNotificacion({
+          usuario_id: ticket.usuario_id,
           ticket_id: id,
-          mensaje: `Tu ticket ${ticketObj.folio} cambió a: ${estadoLabels[estado]}`,
+          mensaje: `Tu ticket ${ticket.folio} cambió a: ${estadoLabels[estado]}`,
           tipo: 'estado'
         })
       }
 
-      saveStore(store)
-
-      return res.json(applyTicketJoins(store.tickets[idx], store))
+      const updated = db.prepare('SELECT * FROM tickets WHERE id = ?').get(id)
+      return res.json(ticketWithJoins(updated))
     }
 
-    // Supabase
     const { data, error } = await supabase
       .from('tickets')
       .update({ estado, updated_at: new Date().toISOString() })
@@ -371,10 +326,8 @@ router.put('/:id/estado', requireRole('soporte', 'admin'), async (req, res) => {
     if (error) throw error
 
     await supabase.from('historial_tickets').insert({
-      ticket_id:  id,
-      usuario_id: req.user.sub,
-      accion:     'Estado actualizado',
-      detalle:    `Estado cambiado a: ${estadoLabels[estado]}`
+      ticket_id: id, usuario_id: req.user.sub,
+      accion: 'Estado actualizado', detalle: `Estado cambiado a: ${estadoLabels[estado]}`
     })
 
     return res.json(data)
@@ -385,29 +338,27 @@ router.put('/:id/estado', requireRole('soporte', 'admin'), async (req, res) => {
   }
 })
 
-// ─── PUT /api/tickets/:id/urgente ────────────────────────────────────────────
+// ─── PUT /api/tickets/:id/urgente ─────────────────────────────────────────────
 router.put('/:id/urgente', requireRole('soporte', 'admin'), async (req, res) => {
   try {
     const { id } = req.params
     const { urgente } = req.body
 
     if (isMock) {
-      const store = getStore()
-      const idx = store.tickets.findIndex(t => t.id === id)
-      if (idx === -1) return res.status(404).json({ error: 'Ticket no encontrado' })
+      const ticket = db.prepare('SELECT * FROM tickets WHERE id = ?').get(id)
+      if (!ticket) return res.status(404).json({ error: 'Ticket no encontrado' })
 
       const now = new Date().toISOString()
-      store.tickets[idx] = { ...store.tickets[idx], urgente: !!urgente, updated_at: now }
+      db.prepare('UPDATE tickets SET urgente=?, updated_at=? WHERE id=?').run(urgente ? 1 : 0, now, id)
 
-      store.historial_tickets.push({
-        id: genId(), ticket_id: id, usuario_id: req.user.sub,
-        accion: urgente ? 'Marcado como urgente' : 'Urgencia removida',
-        detalle: urgente ? `Marcado como urgente por ${req.user.nombre}` : `Urgencia removida por ${req.user.nombre}`,
-        created_at: now
-      })
+      db.prepare('INSERT INTO historial_tickets (id, ticket_id, usuario_id, accion, detalle, created_at) VALUES (?,?,?,?,?,?)')
+        .run(genId(), id, req.user.sub,
+          urgente ? 'Marcado como urgente' : 'Urgencia removida',
+          urgente ? `Marcado como urgente por ${req.user.nombre}` : `Urgencia removida por ${req.user.nombre}`,
+          now)
 
-      saveStore(store)
-      return res.json(applyTicketJoins(store.tickets[idx], store))
+      const updated = db.prepare('SELECT * FROM tickets WHERE id = ?').get(id)
+      return res.json(ticketWithJoins(updated))
     }
 
     const { data, error } = await supabase
@@ -426,27 +377,18 @@ router.put('/:id/urgente', requireRole('soporte', 'admin'), async (req, res) => 
   }
 })
 
-// ─── GET /api/tickets/:id/comentarios ────────────────────────────────────────
+// ─── GET /api/tickets/:id/comentarios ─────────────────────────────────────────
 router.get('/:id/comentarios', async (req, res) => {
   try {
     const { id } = req.params
 
     if (isMock) {
-      const store = getStore()
-      const comentarios = store.comentarios
-        .filter(c => c.ticket_id === id)
-        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
-        .map(c => applyComentarioJoins(c, store))
-      return res.json(comentarios)
+      const comentarios = db.prepare('SELECT * FROM comentarios WHERE ticket_id = ? ORDER BY created_at ASC').all(id)
+      return res.json(comentarios.map(commentWithJoins))
     }
 
-    // Supabase
     const { data, error } = await supabase
-      .from('comentarios')
-      .select('*, profiles(nombre, rol)')
-      .eq('ticket_id', id)
-      .order('created_at')
-
+      .from('comentarios').select('*, profiles(nombre, rol)').eq('ticket_id', id).order('created_at')
     if (error) throw error
     return res.json(data || [])
 
@@ -456,7 +398,7 @@ router.get('/:id/comentarios', async (req, res) => {
   }
 })
 
-// ─── POST /api/tickets/:id/comentarios ───────────────────────────────────────
+// ─── POST /api/tickets/:id/comentarios ────────────────────────────────────────
 router.post('/:id/comentarios', async (req, res) => {
   try {
     const { id } = req.params
@@ -470,27 +412,20 @@ router.post('/:id/comentarios', async (req, res) => {
     }
 
     if (isMock) {
-      const store = getStore()
-      const now   = new Date().toISOString()
+      const now = new Date().toISOString()
+      const newId = genId()
 
-      const newComentario = {
-        id:         genId(),
-        ticket_id:  id,
-        usuario_id: req.user.sub,
-        contenido:  contenido.trim(),
-        created_at: now
-      }
-
-      store.comentarios.push(newComentario)
+      db.prepare('INSERT INTO comentarios (id, ticket_id, usuario_id, contenido, created_at) VALUES (?,?,?,?,?)')
+        .run(newId, id, req.user.sub, contenido.trim(), now)
 
       // Notificar al creador del ticket y al técnico asignado
-      const ticketObj = store.tickets.find(t => t.id === id)
+      const ticketObj = db.prepare('SELECT * FROM tickets WHERE id = ?').get(id)
       if (ticketObj) {
         const destinatarios = new Set()
         if (ticketObj.usuario_id && ticketObj.usuario_id !== req.user.sub) destinatarios.add(ticketObj.usuario_id)
         if (ticketObj.asignado_a && ticketObj.asignado_a !== req.user.sub) destinatarios.add(ticketObj.asignado_a)
         for (const uid of destinatarios) {
-          crearNotificacion(store, {
+          crearNotificacion({
             usuario_id: uid,
             ticket_id: id,
             mensaje: `Nuevo comentario en ${ticketObj.folio} de ${req.user.nombre}`,
@@ -499,33 +434,13 @@ router.post('/:id/comentarios', async (req, res) => {
         }
       }
 
-      saveStore(store)
-
-      // ── Notificaciones por correo (descomentar cuando esté configurado el SMTP) ──
-      // const ticketObj = store.tickets.find(t => t.id === id)
-      // if (ticketObj && req.user.rol !== 'encargada') {
-      //   const sucursal = store.sucursales.find(s => s.id === ticketObj.sucursal_id)
-      //   notificarComentario({
-      //     to:         sucursal?.email || '',
-      //     folio:      ticketObj.folio,
-      //     titulo:     ticketObj.titulo,
-      //     sucursal:   sucursal?.nombre || '',
-      //     comentario: contenido.trim(),
-      //     tecnico:    req.user.nombre
-      //   })
-      // }
-
-      return res.status(201).json(applyComentarioJoins(newComentario, store))
+      const newCom = db.prepare('SELECT * FROM comentarios WHERE id = ?').get(newId)
+      return res.status(201).json(commentWithJoins(newCom))
     }
 
-    // Supabase
     const { data, error } = await supabase
       .from('comentarios')
-      .insert({
-        ticket_id:  id,
-        usuario_id: req.user.sub,
-        contenido:  contenido.trim()
-      })
+      .insert({ ticket_id: id, usuario_id: req.user.sub, contenido: contenido.trim() })
       .select('*, profiles(nombre, rol)')
       .single()
 
@@ -538,26 +453,18 @@ router.post('/:id/comentarios', async (req, res) => {
   }
 })
 
-// ─── GET /api/tickets/:id/historial ──────────────────────────────────────────
+// ─── GET /api/tickets/:id/historial ───────────────────────────────────────────
 router.get('/:id/historial', async (req, res) => {
   try {
     const { id } = req.params
 
     if (isMock) {
-      const store = getStore()
-      const historial = store.historial_tickets
-        .filter(h => h.ticket_id === id)
-        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+      const historial = db.prepare('SELECT * FROM historial_tickets WHERE ticket_id = ? ORDER BY created_at DESC').all(id)
       return res.json(historial)
     }
 
-    // Supabase
     const { data, error } = await supabase
-      .from('historial_tickets')
-      .select('*')
-      .eq('ticket_id', id)
-      .order('created_at', { ascending: false })
-
+      .from('historial_tickets').select('*').eq('ticket_id', id).order('created_at', { ascending: false })
     if (error) throw error
     return res.json(data || [])
 
@@ -574,36 +481,33 @@ router.put('/:id/asignar', requireRole('soporte', 'admin'), async (req, res) => 
     const { asignado_a } = req.body
 
     if (isMock) {
-      const store = getStore()
-      const idx = store.tickets.findIndex(t => t.id === id)
-      if (idx === -1) return res.status(404).json({ error: 'Ticket no encontrado' })
+      const ticket = db.prepare('SELECT * FROM tickets WHERE id = ?').get(id)
+      if (!ticket) return res.status(404).json({ error: 'Ticket no encontrado' })
 
       const now = new Date().toISOString()
-      const tecnico = asignado_a ? store.profiles.find(p => p.id === asignado_a) : null
+      const tecnico = asignado_a ? db.prepare('SELECT nombre FROM profiles WHERE id = ?').get(asignado_a) : null
 
-      store.tickets[idx] = { ...store.tickets[idx], asignado_a: asignado_a || null, updated_at: now }
+      db.prepare('UPDATE tickets SET asignado_a=?, updated_at=? WHERE id=?').run(asignado_a || null, now, id)
 
-      store.historial_tickets.push({
-        id: genId(), ticket_id: id, usuario_id: req.user.sub,
-        accion: asignado_a ? 'Técnico asignado' : 'Asignación removida',
-        detalle: asignado_a
-          ? `Asignado a ${tecnico?.nombre || 'desconocido'} por ${req.user.nombre}`
-          : `Asignación removida por ${req.user.nombre}`,
-        created_at: now
-      })
+      db.prepare('INSERT INTO historial_tickets (id, ticket_id, usuario_id, accion, detalle, created_at) VALUES (?,?,?,?,?,?)')
+        .run(genId(), id, req.user.sub,
+          asignado_a ? 'Técnico asignado' : 'Asignación removida',
+          asignado_a
+            ? `Asignado a ${tecnico?.nombre || 'desconocido'} por ${req.user.nombre}`
+            : `Asignación removida por ${req.user.nombre}`,
+          now)
 
-      // Notificar al técnico asignado
       if (asignado_a && asignado_a !== req.user.sub) {
-        crearNotificacion(store, {
+        crearNotificacion({
           usuario_id: asignado_a,
           ticket_id: id,
-          mensaje: `Te asignaron el ticket ${store.tickets[idx].folio}: ${store.tickets[idx].titulo}`,
+          mensaje: `Te asignaron el ticket ${ticket.folio}: ${ticket.titulo}`,
           tipo: 'asignacion'
         })
       }
 
-      saveStore(store)
-      return res.json(applyTicketJoins(store.tickets[idx], store))
+      const updated = db.prepare('SELECT * FROM tickets WHERE id = ?').get(id)
+      return res.json(ticketWithJoins(updated))
     }
 
     const { data, error } = await supabase
@@ -628,23 +532,15 @@ router.get('/:id/notas', requireRole('soporte', 'admin'), async (req, res) => {
     const { id } = req.params
 
     if (isMock) {
-      const store = getStore()
-      const notas = store.notas_internas
-        .filter(n => n.ticket_id === id)
-        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
-        .map(n => {
-          const profile = store.profiles.find(p => p.id === n.usuario_id)
-          return { ...n, profiles: profile || null }
-        })
-      return res.json(notas)
+      const notas = db.prepare('SELECT * FROM notas_internas WHERE ticket_id = ? ORDER BY created_at ASC').all(id)
+      return res.json(notas.map(n => {
+        const profile = db.prepare('SELECT id, nombre, rol FROM profiles WHERE id = ?').get(n.usuario_id)
+        return { ...n, profiles: profile || null }
+      }))
     }
 
     const { data, error } = await supabase
-      .from('notas_internas')
-      .select('*, profiles(nombre, rol)')
-      .eq('ticket_id', id)
-      .order('created_at')
-
+      .from('notas_internas').select('*, profiles(nombre, rol)').eq('ticket_id', id).order('created_at')
     if (error) throw error
     return res.json(data || [])
 
@@ -668,31 +564,20 @@ router.post('/:id/notas', requireRole('soporte', 'admin'), async (req, res) => {
     }
 
     if (isMock) {
-      const store = getStore()
+      const newId = genId()
       const now = new Date().toISOString()
 
-      const nuevaNota = {
-        id: genId(),
-        ticket_id: id,
-        usuario_id: req.user.sub,
-        contenido: contenido.trim(),
-        created_at: now
-      }
+      db.prepare('INSERT INTO notas_internas (id, ticket_id, usuario_id, contenido, created_at) VALUES (?,?,?,?,?)')
+        .run(newId, id, req.user.sub, contenido.trim(), now)
 
-      store.notas_internas.push(nuevaNota)
-      saveStore(store)
-
-      const profile = store.profiles.find(p => p.id === req.user.sub)
-      return res.status(201).json({ ...nuevaNota, profiles: profile || null })
+      const nota = db.prepare('SELECT * FROM notas_internas WHERE id = ?').get(newId)
+      const profile = db.prepare('SELECT id, nombre, rol FROM profiles WHERE id = ?').get(req.user.sub)
+      return res.status(201).json({ ...nota, profiles: profile || null })
     }
 
     const { data, error } = await supabase
       .from('notas_internas')
-      .insert({
-        ticket_id: id,
-        usuario_id: req.user.sub,
-        contenido: contenido.trim()
-      })
+      .insert({ ticket_id: id, usuario_id: req.user.sub, contenido: contenido.trim() })
       .select('*, profiles(nombre, rol)')
       .single()
 

@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken'
-import { getSucursalInvalidatedAt } from '../data/mock.js'
+import { getSucursalInvalidatedAt } from '../lib/database.js'
 
 export function authenticate(req, res, next) {
   const header = req.headers.authorization

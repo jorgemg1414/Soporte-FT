@@ -1,26 +1,19 @@
 import { Router } from 'express'
 import { isMock, supabase } from '../lib/supabase.js'
-import { getStore, saveStore, genId } from '../data/mock.js'
+import db, { genId } from '../lib/database.js'
 import { authenticate, requireRole } from '../middleware/auth.js'
 
 const router = Router()
 
-// ─── GET /api/sucursales (público — solo id y nombre, sin contraseña) ────────
+// ─── GET /api/sucursales (público — solo id y nombre) ─────────────────────────
 router.get('/', async (req, res) => {
   try {
     if (isMock) {
-      const store = getStore()
-      const sucursales = [...store.sucursales]
-        .sort((a, b) => a.nombre.localeCompare(b.nombre))
-        .map(({ id, nombre }) => ({ id, nombre }))
+      const sucursales = db.prepare('SELECT id, nombre FROM sucursales ORDER BY nombre').all()
       return res.json(sucursales)
     }
 
-    const { data, error } = await supabase
-      .from('sucursales')
-      .select('id, nombre')
-      .order('nombre')
-
+    const { data, error } = await supabase.from('sucursales').select('id, nombre').order('nombre')
     if (error) throw error
     return res.json(data || [])
 
@@ -30,35 +23,21 @@ router.get('/', async (req, res) => {
   }
 })
 
-// ─── POST /api/sucursales ────────────────────────────────────────────────────
+// ─── POST /api/sucursales ─────────────────────────────────────────────────────
 router.post('/', authenticate, requireRole('admin'), async (req, res) => {
   try {
     const { nombre, email } = req.body
-    if (!nombre?.trim()) {
-      return res.status(400).json({ error: 'El nombre es requerido' })
-    }
+    if (!nombre?.trim()) return res.status(400).json({ error: 'El nombre es requerido' })
 
     if (isMock) {
-      const store = getStore()
-      const newSuc = {
-        id:         genId(),
-        nombre:     nombre.trim().toUpperCase(),
-        password:   process.env.MOCK_PASSWORD_SUCURSALES,
-        email:      email?.trim() || '',
-        created_at: new Date().toISOString()
-      }
-      store.sucursales.push(newSuc)
-      saveStore(store)
-      const { password: _, ...safe } = newSuc
-      return res.status(201).json(safe)
+      const id = genId()
+      db.prepare('INSERT INTO sucursales (id, nombre, password, email, created_at) VALUES (?,?,?,?,?)')
+        .run(id, nombre.trim().toUpperCase(), process.env.MOCK_PASSWORD_SUCURSALES, email?.trim() || '', new Date().toISOString())
+      const suc = db.prepare('SELECT id, nombre, email, created_at FROM sucursales WHERE id = ?').get(id)
+      return res.status(201).json(suc)
     }
 
-    const { data, error } = await supabase
-      .from('sucursales')
-      .insert({ nombre: nombre.trim().toUpperCase() })
-      .select()
-      .single()
-
+    const { data, error } = await supabase.from('sucursales').insert({ nombre: nombre.trim().toUpperCase() }).select().single()
     if (error) throw error
     return res.status(201).json(data)
 
@@ -69,27 +48,17 @@ router.post('/', authenticate, requireRole('admin'), async (req, res) => {
 })
 
 // ─── PUT /api/sucursales/password-todas (solo admin) ──────────────────────────
-// IMPORTANT: Must be before /:id routes to avoid Express matching "password-todas" as :id
 router.put('/password-todas', authenticate, requireRole('admin'), async (req, res) => {
   try {
     const { password } = req.body
-
-    if (!password || password.length < 4) {
-      return res.status(400).json({ error: 'La contraseña debe tener al menos 4 caracteres' })
-    }
+    if (!password || password.length < 4) return res.status(400).json({ error: 'La contraseña debe tener al menos 4 caracteres' })
 
     if (isMock) {
-      const store = getStore()
-      store.sucursales.forEach(s => { s.password = password })
-      saveStore(store)
-      return res.json({ ok: true, message: `Contraseña actualizada en ${store.sucursales.length} sucursales` })
+      const info = db.prepare('UPDATE sucursales SET password = ?').run(password)
+      return res.json({ ok: true, message: `Contraseña actualizada en ${info.changes} sucursales` })
     }
 
-    const { error } = await supabase
-      .from('sucursales')
-      .update({ password })
-      .neq('id', '')
-
+    const { error } = await supabase.from('sucursales').update({ password }).neq('id', '')
     if (error) throw error
     return res.json({ ok: true, message: 'Contraseña actualizada en todas las sucursales' })
 
@@ -99,33 +68,24 @@ router.put('/password-todas', authenticate, requireRole('admin'), async (req, re
   }
 })
 
-// ─── PUT /api/sucursales/:id ─────────────────────────────────────────────────
+// ─── PUT /api/sucursales/:id ──────────────────────────────────────────────────
 router.put('/:id', authenticate, requireRole('admin'), async (req, res) => {
   try {
     const { id } = req.params
     const { nombre, email } = req.body
-    if (!nombre?.trim()) {
-      return res.status(400).json({ error: 'El nombre es requerido' })
-    }
+    if (!nombre?.trim()) return res.status(400).json({ error: 'El nombre es requerido' })
 
     if (isMock) {
-      const store = getStore()
-      const idx   = store.sucursales.findIndex(s => s.id === id)
-      if (idx === -1) return res.status(404).json({ error: 'Sucursal no encontrada' })
+      const exists = db.prepare('SELECT id FROM sucursales WHERE id = ?').get(id)
+      if (!exists) return res.status(404).json({ error: 'Sucursal no encontrada' })
 
-      store.sucursales[idx] = { ...store.sucursales[idx], nombre: nombre.trim().toUpperCase(), email: email?.trim() || '' }
-      saveStore(store)
-      const { password: _, ...safe } = store.sucursales[idx]
-      return res.json(safe)
+      db.prepare('UPDATE sucursales SET nombre=?, email=? WHERE id=?')
+        .run(nombre.trim().toUpperCase(), email?.trim() || '', id)
+      const suc = db.prepare('SELECT id, nombre, email, created_at FROM sucursales WHERE id = ?').get(id)
+      return res.json(suc)
     }
 
-    const { data, error } = await supabase
-      .from('sucursales')
-      .update({ nombre: nombre.trim().toUpperCase() })
-      .eq('id', id)
-      .select()
-      .single()
-
+    const { data, error } = await supabase.from('sucursales').update({ nombre: nombre.trim().toUpperCase() }).eq('id', id).select().single()
     if (error) throw error
     return res.json(data)
 
@@ -140,26 +100,16 @@ router.put('/:id/password', authenticate, requireRole('admin'), async (req, res)
   try {
     const { id } = req.params
     const { password } = req.body
-
-    if (!password || password.length < 4) {
-      return res.status(400).json({ error: 'La contraseña debe tener al menos 4 caracteres' })
-    }
+    if (!password || password.length < 4) return res.status(400).json({ error: 'La contraseña debe tener al menos 4 caracteres' })
 
     if (isMock) {
-      const store = getStore()
-      const idx = store.sucursales.findIndex(s => s.id === id)
-      if (idx === -1) return res.status(404).json({ error: 'Sucursal no encontrada' })
-
-      store.sucursales[idx].password = password
-      saveStore(store)
+      const exists = db.prepare('SELECT id FROM sucursales WHERE id = ?').get(id)
+      if (!exists) return res.status(404).json({ error: 'Sucursal no encontrada' })
+      db.prepare('UPDATE sucursales SET password = ? WHERE id = ?').run(password, id)
       return res.json({ ok: true, message: 'Contraseña actualizada' })
     }
 
-    const { error } = await supabase
-      .from('sucursales')
-      .update({ password })
-      .eq('id', id)
-
+    const { error } = await supabase.from('sucursales').update({ password }).eq('id', id)
     if (error) throw error
     return res.json({ ok: true, message: 'Contraseña actualizada' })
 
@@ -169,26 +119,19 @@ router.put('/:id/password', authenticate, requireRole('admin'), async (req, res)
   }
 })
 
-// ─── DELETE /api/sucursales/:id ──────────────────────────────────────────────
+// ─── DELETE /api/sucursales/:id ───────────────────────────────────────────────
 router.delete('/:id', authenticate, requireRole('admin'), async (req, res) => {
   try {
     const { id } = req.params
 
     if (isMock) {
-      const store = getStore()
-      const idx   = store.sucursales.findIndex(s => s.id === id)
-      if (idx === -1) return res.status(404).json({ error: 'Sucursal no encontrada' })
-
-      store.sucursales.splice(idx, 1)
-      saveStore(store)
+      const exists = db.prepare('SELECT id FROM sucursales WHERE id = ?').get(id)
+      if (!exists) return res.status(404).json({ error: 'Sucursal no encontrada' })
+      db.prepare('DELETE FROM sucursales WHERE id = ?').run(id)
       return res.json({ ok: true })
     }
 
-    const { error } = await supabase
-      .from('sucursales')
-      .delete()
-      .eq('id', id)
-
+    const { error } = await supabase.from('sucursales').delete().eq('id', id)
     if (error) throw error
     return res.json({ ok: true })
 

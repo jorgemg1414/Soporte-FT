@@ -38,12 +38,12 @@
               <q-separator />
               <q-scroll-area style="height: 300px">
                 <q-item v-for="n in notificaciones" :key="n.id" clickable v-ripple
-                  :class="n.leida ? '' : 'bg-blue-1'" @click="abrirNotificacion(n)">
+                  :class="n.leida ? '' : 'notif-no-leida'" @click="abrirNotificacion(n)">
                   <q-item-section avatar>
                     <q-icon :name="getNotifIcon(n.tipo)" :color="n.leida ? 'grey' : 'primary'" />
                   </q-item-section>
                   <q-item-section>
-                    <q-item-label :class="n.leida ? 'text-grey-6' : 'text-weight-medium'" style="font-size: 13px">
+                    <q-item-label :class="n.leida ? 'text-grey' : 'text-weight-medium'" style="font-size: 13px">
                       {{ n.mensaje }}
                     </q-item-label>
                     <q-item-label caption>{{ formatTimeAgo(n.created_at) }}</q-item-label>
@@ -53,7 +53,7 @@
                   </q-item-section>
                 </q-item>
                 <q-item v-if="notificaciones.length === 0">
-                  <q-item-section class="text-center text-grey-5 q-py-md">Sin notificaciones</q-item-section>
+                  <q-item-section class="text-center text-grey q-py-md">Sin notificaciones</q-item-section>
                 </q-item>
               </q-scroll-area>
             </q-list>
@@ -268,5 +268,14 @@ async function handleLogout() {
 }
 .sidebar-header {
   min-height: 80px;
+}
+</style>
+
+<style>
+.notif-no-leida {
+  background: rgba(25, 118, 210, 0.08);
+}
+.body--dark .notif-no-leida {
+  background: rgba(25, 118, 210, 0.2);
 }
 </style>

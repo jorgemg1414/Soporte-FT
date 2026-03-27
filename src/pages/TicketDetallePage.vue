@@ -335,7 +335,7 @@ async function loadAll() {
   ]
   if (esSoporte) {
     promises.push(api.get(`/tickets/${id}/notas`))
-    promises.push(api.get('/usuarios'))
+    promises.push(api.get('/usuarios/tecnicos'))
   }
 
   const results = await Promise.all(promises)
@@ -346,8 +346,7 @@ async function loadAll() {
 
   if (esSoporte) {
     notasInternas.value = results[3].data || []
-    const usuarios = results[4].data || []
-    tecnicos.value = usuarios.filter(u => u.rol === 'soporte' || u.rol === 'admin')
+    tecnicos.value = results[4].data || []
     tecnicoSeleccionado.value = ticket.value.asignado_a || null
   }
 }

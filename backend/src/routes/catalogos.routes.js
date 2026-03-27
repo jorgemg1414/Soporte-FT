@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { authenticate, requireRole } from '../middleware/auth.js'
-import { getStore, saveStore, genId } from '../data/mock.js'
+import db, { genId } from '../lib/database.js'
 import { isMock, supabase } from '../lib/supabase.js'
 
 const router = Router()
@@ -10,11 +10,10 @@ router.get('/', authenticate, async (req, res) => {
   try {
     const { tipo } = req.query
     if (isMock) {
-      const store = getStore()
       const items = tipo
-        ? store.catalogos.filter(c => c.tipo === tipo && c.activo)
-        : store.catalogos.filter(c => c.activo)
-      return res.json(items.sort((a, b) => a.orden - b.orden))
+        ? db.prepare('SELECT * FROM catalogos WHERE tipo = ? AND activo = 1 ORDER BY orden').all(tipo)
+        : db.prepare('SELECT * FROM catalogos WHERE activo = 1 ORDER BY orden').all()
+      return res.json(items.map(i => ({ ...i, activo: !!i.activo })))
     }
     let query = supabase.from('catalogos').select('*').eq('activo', true).order('orden')
     if (tipo) query = query.eq('tipo', tipo)
@@ -31,11 +30,10 @@ router.get('/all', authenticate, requireRole('admin'), async (req, res) => {
   try {
     const { tipo } = req.query
     if (isMock) {
-      const store = getStore()
       const items = tipo
-        ? store.catalogos.filter(c => c.tipo === tipo)
-        : store.catalogos
-      return res.json(items.sort((a, b) => a.orden - b.orden))
+        ? db.prepare('SELECT * FROM catalogos WHERE tipo = ? ORDER BY orden').all(tipo)
+        : db.prepare('SELECT * FROM catalogos ORDER BY orden').all()
+      return res.json(items.map(i => ({ ...i, activo: !!i.activo })))
     }
     let query = supabase.from('catalogos').select('*').order('orden')
     if (tipo) query = query.eq('tipo', tipo)
@@ -54,12 +52,12 @@ router.post('/', authenticate, requireRole('admin'), async (req, res) => {
     if (!tipo || !label || !value) return res.status(400).json({ error: 'Faltan campos requeridos' })
 
     if (isMock) {
-      const store = getStore()
-      const maxOrden = store.catalogos.filter(c => c.tipo === tipo).reduce((m, c) => Math.max(m, c.orden), 0)
-      const nuevo = { id: genId(), tipo, label, value, grupo: grupo || '', orden: orden ?? maxOrden + 1, activo }
-      store.catalogos.push(nuevo)
-      saveStore(store)
-      return res.status(201).json(nuevo)
+      const maxOrden = db.prepare('SELECT MAX(orden) as m FROM catalogos WHERE tipo = ?').get(tipo)
+      const id = genId()
+      db.prepare('INSERT INTO catalogos (id, tipo, label, value, grupo, orden, activo) VALUES (?,?,?,?,?,?,?)')
+        .run(id, tipo, label, value, grupo || '', orden ?? (maxOrden?.m || 0) + 1, activo ? 1 : 0)
+      const nuevo = db.prepare('SELECT * FROM catalogos WHERE id = ?').get(id)
+      return res.status(201).json({ ...nuevo, activo: !!nuevo.activo })
     }
     const { data, error } = await supabase.from('catalogos').insert({ tipo, label, value, grupo, orden, activo }).select().single()
     if (error) throw error
@@ -74,12 +72,12 @@ router.put('/:id', authenticate, requireRole('admin'), async (req, res) => {
   try {
     const { label, value, grupo, orden, activo } = req.body
     if (isMock) {
-      const store = getStore()
-      const idx = store.catalogos.findIndex(c => c.id === req.params.id)
-      if (idx === -1) return res.status(404).json({ error: 'No encontrado' })
-      store.catalogos[idx] = { ...store.catalogos[idx], label, value, grupo, orden, activo }
-      saveStore(store)
-      return res.json(store.catalogos[idx])
+      const exists = db.prepare('SELECT id FROM catalogos WHERE id = ?').get(req.params.id)
+      if (!exists) return res.status(404).json({ error: 'No encontrado' })
+      db.prepare('UPDATE catalogos SET label=?, value=?, grupo=?, orden=?, activo=? WHERE id=?')
+        .run(label, value, grupo, orden, activo ? 1 : 0, req.params.id)
+      const updated = db.prepare('SELECT * FROM catalogos WHERE id = ?').get(req.params.id)
+      return res.json({ ...updated, activo: !!updated.activo })
     }
     const { data, error } = await supabase.from('catalogos').update({ label, value, grupo, orden, activo }).eq('id', req.params.id).select().single()
     if (error) throw error
@@ -93,9 +91,7 @@ router.put('/:id', authenticate, requireRole('admin'), async (req, res) => {
 router.delete('/:id', authenticate, requireRole('admin'), async (req, res) => {
   try {
     if (isMock) {
-      const store = getStore()
-      store.catalogos = store.catalogos.filter(c => c.id !== req.params.id)
-      saveStore(store)
+      db.prepare('DELETE FROM catalogos WHERE id = ?').run(req.params.id)
       return res.json({ ok: true })
     }
     const { error } = await supabase.from('catalogos').delete().eq('id', req.params.id)

@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import { isMock, supabase } from '../lib/supabase.js'
-import { getStore, saveStore, genId } from '../data/mock.js'
+import db, { genId } from '../lib/database.js'
 import { authenticate, requireRole } from '../middleware/auth.js'
 
 const router = Router()
@@ -11,33 +11,20 @@ router.use(authenticate)
 router.get('/', async (req, res) => {
   try {
     if (isMock) {
-      const store = getStore()
-      let sugerencias = store.sugerencias
-
-      // Encargada solo ve las suyas
+      let sugerencias
       if (req.user.rol === 'encargada') {
-        sugerencias = sugerencias.filter(s => s.sucursal_id === req.user.sucursal_id)
+        sugerencias = db.prepare('SELECT * FROM sugerencias WHERE sucursal_id = ? ORDER BY created_at DESC').all(req.user.sucursal_id)
+      } else {
+        sugerencias = db.prepare('SELECT * FROM sugerencias ORDER BY created_at DESC').all()
       }
-
-      sugerencias = [...sugerencias]
-        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
-        .map(s => {
-          const suc = store.sucursales.find(su => su.id === s.sucursal_id)
-          return { ...s, sucursal_nombre: suc?.nombre || '—' }
-        })
-
-      return res.json(sugerencias)
+      return res.json(sugerencias.map(s => {
+        const suc = s.sucursal_id ? db.prepare('SELECT nombre FROM sucursales WHERE id = ?').get(s.sucursal_id) : null
+        return { ...s, sucursal_nombre: suc?.nombre || '—' }
+      }))
     }
 
-    let query = supabase
-      .from('sugerencias')
-      .select('*, sucursales(nombre)')
-      .order('created_at', { ascending: false })
-
-    if (req.user.rol === 'encargada') {
-      query = query.eq('sucursal_id', req.user.sucursal_id)
-    }
-
+    let query = supabase.from('sugerencias').select('*, sucursales(nombre)').order('created_at', { ascending: false })
+    if (req.user.rol === 'encargada') query = query.eq('sucursal_id', req.user.sucursal_id)
     const { data, error } = await query
     if (error) throw error
     return res.json(data || [])
@@ -52,42 +39,24 @@ router.get('/', async (req, res) => {
 router.post('/', async (req, res) => {
   try {
     const { contenido } = req.body
-
-    if (!contenido?.trim()) {
-      return res.status(400).json({ error: 'El contenido es requerido' })
-    }
-    if (contenido.length > 2000) {
-      return res.status(400).json({ error: 'Máximo 2000 caracteres' })
-    }
+    if (!contenido?.trim()) return res.status(400).json({ error: 'El contenido es requerido' })
+    if (contenido.length > 2000) return res.status(400).json({ error: 'Máximo 2000 caracteres' })
 
     if (isMock) {
-      const store = getStore()
-      const nueva = {
-        id: genId(),
-        usuario_id: req.user.sub,
-        sucursal_id: req.user.sucursal_id || null,
-        contenido: contenido.trim(),
-        estado: 'pendiente',
-        respuesta: null,
-        created_at: new Date().toISOString()
-      }
-      store.sugerencias.push(nueva)
-      saveStore(store)
-
-      const suc = store.sucursales.find(s => s.id === nueva.sucursal_id)
+      const id = genId()
+      const now = new Date().toISOString()
+      db.prepare('INSERT INTO sugerencias (id, usuario_id, sucursal_id, contenido, estado, created_at) VALUES (?,?,?,?,?,?)')
+        .run(id, req.user.sub, req.user.sucursal_id || null, contenido.trim(), 'pendiente', now)
+      const nueva = db.prepare('SELECT * FROM sugerencias WHERE id = ?').get(id)
+      const suc = nueva.sucursal_id ? db.prepare('SELECT nombre FROM sucursales WHERE id = ?').get(nueva.sucursal_id) : null
       return res.status(201).json({ ...nueva, sucursal_nombre: suc?.nombre || '—' })
     }
 
     const { data, error } = await supabase
       .from('sugerencias')
-      .insert({
-        usuario_id: req.user.sub,
-        sucursal_id: req.user.sucursal_id || null,
-        contenido: contenido.trim()
-      })
+      .insert({ usuario_id: req.user.sub, sucursal_id: req.user.sucursal_id || null, contenido: contenido.trim() })
       .select('*, sucursales(nombre)')
       .single()
-
     if (error) throw error
     return res.status(201).json(data)
 
@@ -97,41 +66,29 @@ router.post('/', async (req, res) => {
   }
 })
 
-// ─── PUT /api/sugerencias/:id/responder (admin/soporte) ───────────────────────
+// ─── PUT /api/sugerencias/:id/responder ───────────────────────────────────────
 router.put('/:id/responder', requireRole('admin', 'soporte'), async (req, res) => {
   try {
     const { respuesta, estado } = req.body
-
-    if (!respuesta?.trim()) {
-      return res.status(400).json({ error: 'La respuesta es requerida' })
-    }
+    if (!respuesta?.trim()) return res.status(400).json({ error: 'La respuesta es requerida' })
 
     const estadosValidos = ['pendiente', 'revisada', 'implementada', 'descartada']
     const nuevoEstado = estadosValidos.includes(estado) ? estado : 'revisada'
 
     if (isMock) {
-      const store = getStore()
-      const idx = store.sugerencias.findIndex(s => s.id === req.params.id)
-      if (idx === -1) return res.status(404).json({ error: 'Sugerencia no encontrada' })
+      const exists = db.prepare('SELECT id FROM sugerencias WHERE id = ?').get(req.params.id)
+      if (!exists) return res.status(404).json({ error: 'Sugerencia no encontrada' })
 
-      store.sugerencias[idx] = {
-        ...store.sugerencias[idx],
-        respuesta: respuesta.trim(),
-        estado: nuevoEstado
-      }
-      saveStore(store)
+      db.prepare('UPDATE sugerencias SET respuesta=?, estado=? WHERE id=?')
+        .run(respuesta.trim(), nuevoEstado, req.params.id)
 
-      const suc = store.sucursales.find(s => s.id === store.sugerencias[idx].sucursal_id)
-      return res.json({ ...store.sugerencias[idx], sucursal_nombre: suc?.nombre || '—' })
+      const updated = db.prepare('SELECT * FROM sugerencias WHERE id = ?').get(req.params.id)
+      const suc = updated.sucursal_id ? db.prepare('SELECT nombre FROM sucursales WHERE id = ?').get(updated.sucursal_id) : null
+      return res.json({ ...updated, sucursal_nombre: suc?.nombre || '—' })
     }
 
     const { data, error } = await supabase
-      .from('sugerencias')
-      .update({ respuesta: respuesta.trim(), estado: nuevoEstado })
-      .eq('id', req.params.id)
-      .select('*, sucursales(nombre)')
-      .single()
-
+      .from('sugerencias').update({ respuesta: respuesta.trim(), estado: nuevoEstado }).eq('id', req.params.id).select('*, sucursales(nombre)').single()
     if (error) throw error
     return res.json(data)
 

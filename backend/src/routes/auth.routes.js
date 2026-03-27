@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import jwt from 'jsonwebtoken'
 import { isMock, supabaseAuth, supabase } from '../lib/supabase.js'
-import { getStore, invalidateSucursalSessions } from '../data/mock.js'
+import db, { invalidateSucursalSessions } from '../lib/database.js'
 import { authenticate, requireRole } from '../middleware/auth.js'
 import { checkIPBlock, registerFailedAttempt, registerSuccessfulLogin, logSecurity } from '../middleware/security.js'
 
@@ -19,45 +19,40 @@ router.post('/login', checkIPBlock, async (req, res) => {
     let userId, nombre, rol, sucursal_id, sucursal_nombre
 
     if (isMock) {
-      const store = getStore()
-
-      // Buscar en users_auth (acepta "gonzalez" o "gonzalez@ft.com")
+      // SQLite: buscar en users_auth
       const normalize = s => s.replace(/@ft\.com$/i, '').toLowerCase()
-      const authUser = store.users_auth.find(
-        u => normalize(u.email) === normalize(email) && u.password === password
-      )
-      if (!authUser) {
+      const authUser = db.prepare(`
+        SELECT * FROM users_auth WHERE LOWER(REPLACE(email, '@ft.com', '')) = ?
+      `).get(normalize(email))
+
+      if (!authUser || authUser.password !== password) {
         registerFailedAttempt(req)
         return res.status(401).json({ error: 'Credenciales incorrectas' })
       }
 
-      // Buscar profile
-      const profile = store.profiles.find(p => p.id === authUser.id)
+      const profile = db.prepare('SELECT * FROM profiles WHERE id = ?').get(authUser.id)
       if (!profile) {
         return res.status(401).json({ error: 'Perfil no encontrado' })
       }
 
-      // Buscar sucursal si aplica
       let sucursal = null
       if (profile.sucursal_id) {
-        sucursal = store.sucursales.find(s => s.id === profile.sucursal_id) || null
+        sucursal = db.prepare('SELECT id, nombre FROM sucursales WHERE id = ?').get(profile.sucursal_id)
       }
 
-      userId         = authUser.id
-      nombre         = profile.nombre
-      rol            = profile.rol
-      sucursal_id    = profile.sucursal_id || null
+      userId          = authUser.id
+      nombre          = profile.nombre
+      rol             = profile.rol
+      sucursal_id     = profile.sucursal_id || null
       sucursal_nombre = sucursal?.nombre || null
 
     } else {
-      // Supabase real
       const { data, error } = await supabaseAuth.auth.signInWithPassword({ email, password })
       if (error || !data.user) {
         registerFailedAttempt(req)
         return res.status(401).json({ error: 'Credenciales incorrectas' })
       }
 
-      // Buscar profile con service role key
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('*, sucursales(nombre)')
@@ -68,14 +63,13 @@ router.post('/login', checkIPBlock, async (req, res) => {
         return res.status(401).json({ error: 'Perfil no encontrado' })
       }
 
-      userId         = data.user.id
-      nombre         = profile.nombre
-      rol            = profile.rol
-      sucursal_id    = profile.sucursal_id || null
+      userId          = data.user.id
+      nombre          = profile.nombre
+      rol             = profile.rol
+      sucursal_id     = profile.sucursal_id || null
       sucursal_nombre = profile.sucursales?.nombre || null
     }
 
-    // Emitir JWT propio
     const token = jwt.sign(
       { sub: userId, nombre, rol, sucursal_id, sucursal_nombre },
       process.env.JWT_SECRET,
@@ -105,15 +99,14 @@ router.post('/sucursal-login', checkIPBlock, async (req, res) => {
     let sucursal_nombre, userId
 
     if (isMock) {
-      const store = getStore()
-      const sucursal = store.sucursales.find(s => s.id === sucursal_id)
+      const sucursal = db.prepare('SELECT * FROM sucursales WHERE id = ?').get(sucursal_id)
       if (!sucursal) return res.status(404).json({ error: 'Sucursal no encontrada' })
       if (sucursal.password !== password) {
         registerFailedAttempt(req)
         return res.status(401).json({ error: 'Contraseña incorrecta' })
       }
       sucursal_nombre = sucursal.nombre
-      const profile = store.profiles.find(p => p.sucursal_id === sucursal_id && p.rol === 'encargada')
+      const profile = db.prepare("SELECT id FROM profiles WHERE sucursal_id = ? AND rol = 'encargada'").get(sucursal_id)
       userId = profile?.id || `branch_${sucursal_id}`
     } else {
       const { data: suc, error } = await supabase.from('sucursales').select('nombre, password').eq('id', sucursal_id).single()
@@ -151,7 +144,6 @@ router.post('/cerrar-sesiones-sucursales', authenticate, requireRole('admin'), (
 
 // GET /api/auth/me
 router.get('/me', authenticate, (req, res) => {
-  // req.user tiene el payload del JWT
   const { sub, nombre, rol, sucursal_id, sucursal_nombre } = req.user
   res.json({ id: sub, nombre, rol, sucursal_id, sucursal_nombre })
 })
