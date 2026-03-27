@@ -10,9 +10,10 @@
     </div>
 
     <q-tabs v-model="tab" align="left" active-color="primary" indicator-color="primary" class="q-mb-md">
-      <q-tab name="sucursales" icon="store"             label="Sucursales" />
-      <q-tab name="usuarios"   icon="people"            label="Usuarios" />
-      <q-tab name="catalogos"  icon="category"          label="Catálogos" />
+      <q-tab name="sucursales"  icon="store"    label="Sucursales" />
+      <q-tab name="usuarios"    icon="people"   label="Usuarios" />
+      <q-tab name="catalogos"   icon="category" label="Catálogos" />
+      <q-tab name="contrasenas" icon="lock"     label="Contraseñas" />
     </q-tabs>
 
     <q-tab-panels v-model="tab" animated>
@@ -28,6 +29,14 @@
           <q-separator />
           <q-table :rows="sucursales" :columns="colsSucursales" row-key="id" flat :loading="cargando"
             no-data-label="No hay sucursales registradas">
+            <template #body-cell-email="props">
+              <q-td :props="props">
+                <span v-if="props.value" class="text-caption text-primary">
+                  <q-icon name="email" size="14px" class="q-mr-xs" />{{ props.value }}
+                </span>
+                <span v-else class="text-caption text-grey-5">Sin correo</span>
+              </q-td>
+            </template>
             <template #body-cell-created_at="props">
               <q-td :props="props">{{ new Date(props.value).toLocaleDateString('es-MX') }}</q-td>
             </template>
@@ -68,6 +77,9 @@
               <q-td :props="props" class="text-center">
                 <q-btn flat round icon="edit" color="primary" size="sm" @click="abrirDialogUsuario(props.row)">
                   <q-tooltip>Editar</q-tooltip>
+                </q-btn>
+                <q-btn flat round icon="delete" color="negative" size="sm" @click="confirmarEliminarUsuario(props.row)">
+                  <q-tooltip>Eliminar</q-tooltip>
                 </q-btn>
               </q-td>
             </template>
@@ -126,6 +138,55 @@
         </q-card>
       </q-tab-panel>
 
+      <!-- CONTRASEÑAS -->
+      <q-tab-panel name="contrasenas" class="q-pa-none">
+        <q-card bordered>
+          <q-card-section>
+            <div class="text-h6">Cambiar contraseña de sucursales</div>
+            <div class="text-caption text-grey-6 q-mb-md">Cambia la contraseña de una sucursal o de todas a la vez</div>
+
+            <div class="row q-col-gutter-md">
+              <!-- Cambiar una -->
+              <div class="col-12 col-md-6">
+                <q-card flat bordered class="q-pa-md">
+                  <div class="text-subtitle1 text-weight-medium q-mb-md">Contraseña individual</div>
+                  <q-select v-model="pwSucursalId" outlined dense label="Sucursal"
+                    :options="sucursalesOptions" emit-value map-options class="q-mb-sm" />
+                  <q-input v-model="pwIndividual" outlined dense label="Nueva contraseña"
+                    :type="showPw ? 'text' : 'password'" class="q-mb-sm">
+                    <template #append>
+                      <q-icon :name="showPw ? 'visibility_off' : 'visibility'" class="cursor-pointer" @click="showPw = !showPw" />
+                    </template>
+                  </q-input>
+                  <q-btn color="primary" label="Cambiar" unelevated :loading="guardandoPw"
+                    :disable="!pwSucursalId || !pwIndividual" @click="cambiarPwIndividual" />
+                </q-card>
+              </div>
+              <!-- Cambiar todas -->
+              <div class="col-12 col-md-6">
+                <q-card flat bordered class="q-pa-md">
+                  <div class="text-subtitle1 text-weight-medium q-mb-md">Contraseña para TODAS</div>
+                  <q-input v-model="pwTodas" outlined dense label="Nueva contraseña para todas"
+                    :type="showPwAll ? 'text' : 'password'" class="q-mb-sm">
+                    <template #append>
+                      <q-icon :name="showPwAll ? 'visibility_off' : 'visibility'" class="cursor-pointer" @click="showPwAll = !showPwAll" />
+                    </template>
+                  </q-input>
+                  <q-btn color="negative" label="Cambiar en TODAS" unelevated :loading="guardandoPw"
+                    :disable="!pwTodas" @click="cambiarPwTodas" />
+                </q-card>
+              </div>
+            </div>
+
+            <q-separator class="q-my-lg" />
+
+            <div class="text-subtitle1 text-weight-medium q-mb-sm">Cerrar sesiones</div>
+            <q-btn color="warning" text-color="dark" icon="logout" label="Cerrar sesiones de TODAS las sucursales"
+              unelevated :loading="cerrandoSesiones" @click="cerrarSesionesSucursales" />
+          </q-card-section>
+        </q-card>
+      </q-tab-panel>
+
     </q-tab-panels>
 
     <!-- DIALOG CATÁLOGO -->
@@ -155,13 +216,18 @@
 
     <!-- DIALOG SUCURSAL -->
     <q-dialog v-model="dialogSucursal" persistent>
-      <q-card style="min-width: 360px">
+      <q-card style="min-width: 380px">
         <q-card-section>
           <div class="text-h6">{{ editSucursal.id ? 'Editar sucursal' : 'Nueva sucursal' }}</div>
         </q-card-section>
-        <q-card-section>
+        <q-card-section class="q-gutter-md">
           <q-input v-model="editSucursal.nombre" outlined label="Nombre de la sucursal *" autofocus
             :rules="[val => !!val || 'El nombre es requerido']" />
+          <q-input v-model="editSucursal.email" outlined label="Correo de notificaciones"
+            type="email" hint="Se enviará un aviso cuando cambie el estado del ticket"
+            :rules="[val => !val || /.+@.+\..+/.test(val) || 'Correo inválido']">
+            <template #prepend><q-icon name="email" /></template>
+          </q-input>
         </q-card-section>
         <q-card-actions align="right" class="q-pt-none">
           <q-btn flat label="Cancelar" v-close-popup />
@@ -179,9 +245,11 @@
         <q-card-section class="q-gutter-md">
           <q-input v-model="editUsuario.nombre" outlined label="Nombre completo *"
             :rules="[val => !!val || 'Requerido']" />
-          <q-input v-model="editUsuario.email" outlined label="Correo electrónico *" type="email"
-            :disable="!!editUsuario.id" :hint="editUsuario.id ? 'El correo no se puede modificar' : ''"
-            :rules="[val => !!val || 'Requerido']" />
+          <q-input v-model="editUsuario.username" outlined label="Usuario (para iniciar sesión) *"
+            :disable="!!editUsuario.id"
+            :hint="editUsuario.id ? 'El usuario no se puede modificar' : `Iniciará sesión como: ${editUsuario.username || 'usuario'}@ft.com`"
+            :rules="[val => !!val || 'Requerido', val => /^[a-z0-9]+$/.test(val) || 'Solo letras minúsculas y números, sin espacios']"
+            @update:model-value="v => editUsuario.username = v.toLowerCase().replace(/[^a-z0-9]/g, '')" />
           <q-input v-if="!editUsuario.id" v-model="editUsuario.password" outlined label="Contraseña *" type="password"
             :rules="[val => !!val || 'Requerido', val => val.length >= 6 || 'Mínimo 6 caracteres']" />
           <q-select v-model="editUsuario.rol" outlined label="Rol *"
@@ -189,7 +257,7 @@
             :rules="[val => !!val || 'Selecciona un rol']" />
           <q-select v-model="editUsuario.sucursal_id" outlined label="Sucursal"
             :options="sucursalesOptions" emit-value map-options clearable
-            hint="Solo aplica para el rol Encargada" />
+            hint="Solo aplica para el rol Encargado/a de Sucursal" />
         </q-card-section>
         <q-card-actions align="right" class="q-pt-none">
           <q-btn flat label="Cancelar" v-close-popup />
@@ -214,8 +282,17 @@ const guardando = ref(false)
 
 const dialogSucursal = ref(false)
 const editSucursal = ref({ nombre: '' })
+
+// --- CONTRASEÑAS ---
+const pwSucursalId = ref(null)
+const pwIndividual = ref('')
+const pwTodas = ref('')
+const showPw = ref(false)
+const showPwAll = ref(false)
+const guardandoPw = ref(false)
+const cerrandoSesiones = ref(false)
 const dialogUsuario = ref(false)
-const editUsuario = ref({ nombre: '', email: '', password: '', rol: null, sucursal_id: null })
+const editUsuario = ref({ nombre: '', username: '', password: '', rol: null, sucursal_id: null })
 
 // --- CATÁLOGOS ---
 const catalogoActivo = ref(null)
@@ -306,23 +383,22 @@ async function eliminarCatalogo(item) {
 }
 
 const rolesOptions = [
-  { label: 'Encargada de Sucursal', value: 'encargada' },
-  { label: 'Soporte Técnico',       value: 'soporte' },
-  { label: 'Administrador',         value: 'admin' }
+  { label: 'Soporte Técnico', value: 'soporte' },
+  { label: 'Administrador',   value: 'admin' }
 ]
 const sucursalesOptions = computed(() => sucursales.value.map(s => ({ label: s.nombre, value: s.id })))
 
 const colsSucursales = [
   { name: 'nombre',     label: 'Nombre',  field: 'nombre',     align: 'left', sortable: true },
+  { name: 'email',      label: 'Correo',  field: 'email',      align: 'left' },
   { name: 'created_at', label: 'Creada',  field: 'created_at', align: 'left' },
   { name: 'acciones',   label: 'Acciones',field: 'id',         align: 'center' }
 ]
 const colsUsuarios = [
-  { name: 'nombre',   label: 'Nombre',   field: 'nombre',  align: 'left', sortable: true },
-  { name: 'email',    label: 'Correo',   field: 'email',   align: 'left' },
-  { name: 'rol',      label: 'Rol',      field: 'rol',     align: 'center' },
-  { name: 'sucursal', label: 'Sucursal', field: 'sucursal',align: 'left' },
-  { name: 'acciones', label: 'Acciones', field: 'id',      align: 'center' }
+  { name: 'nombre',   label: 'Nombre',   field: 'nombre', align: 'left', sortable: true },
+  { name: 'email',    label: 'Usuario',  field: 'email',  align: 'left' },
+  { name: 'rol',      label: 'Rol',      field: 'rol',    align: 'center' },
+  { name: 'acciones', label: 'Acciones', field: 'id',     align: 'center' }
 ]
 
 onMounted(async () => {
@@ -348,10 +424,11 @@ async function guardarSucursal() {
   if (!editSucursal.value.nombre.trim()) return
   guardando.value = true
   try {
+    const payload = { nombre: editSucursal.value.nombre.trim(), email: editSucursal.value.email?.trim() || '' }
     if (editSucursal.value.id) {
-      await api.put(`/sucursales/${editSucursal.value.id}`, { nombre: editSucursal.value.nombre.trim() })
+      await api.put(`/sucursales/${editSucursal.value.id}`, payload)
     } else {
-      await api.post('/sucursales', { nombre: editSucursal.value.nombre.trim() })
+      await api.post('/sucursales', payload)
     }
     await loadSucursales()
     dialogSucursal.value = false
@@ -376,10 +453,28 @@ function confirmarEliminarSucursal(suc) {
   })
 }
 
+function confirmarEliminarUsuario(usr) {
+  $q.dialog({
+    title: 'Confirmar eliminación',
+    message: `¿Eliminar al usuario "<b>${usr.nombre}</b>"? Esta acción no se puede deshacer.`,
+    html: true,
+    cancel: { label: 'Cancelar', flat: true },
+    ok: { label: 'Eliminar', color: 'negative', unelevated: true }
+  }).onOk(async () => {
+    try {
+      await api.delete(`/usuarios/${usr.id}`)
+      await loadUsuarios()
+      $q.notify({ type: 'positive', message: 'Usuario eliminado' })
+    } catch (e) {
+      $q.notify({ type: 'negative', message: 'Error al eliminar: ' + (e.response?.data?.error || e.message) })
+    }
+  })
+}
+
 function abrirDialogUsuario(usr = null) {
   editUsuario.value = usr
-    ? { id: usr.id, nombre: usr.nombre, email: usr.email, rol: usr.rol, sucursal_id: usr.sucursal_id, password: '' }
-    : { nombre: '', email: '', password: '', rol: null, sucursal_id: null }
+    ? { id: usr.id, nombre: usr.nombre, username: usr.email?.replace('@ft.com', ''), rol: usr.rol, sucursal_id: usr.sucursal_id, password: '' }
+    : { nombre: '', username: '', password: '', rol: null, sucursal_id: null }
   dialogUsuario.value = true
 }
 async function guardarUsuario() {
@@ -392,7 +487,14 @@ async function guardarUsuario() {
         sucursal_id: editUsuario.value.sucursal_id || null
       })
     } else {
-      await api.post('/usuarios', { ...editUsuario.value })
+      const email = editUsuario.value.username.trim().toLowerCase() + '@ft.com'
+      await api.post('/usuarios', {
+        nombre:      editUsuario.value.nombre,
+        email,
+        password:    editUsuario.value.password,
+        rol:         editUsuario.value.rol,
+        sucursal_id: editUsuario.value.sucursal_id || null
+      })
     }
     await loadUsuarios()
     dialogUsuario.value = false
@@ -404,8 +506,62 @@ async function guardarUsuario() {
   }
 }
 
+async function cambiarPwIndividual() {
+  if (!pwSucursalId.value || !pwIndividual.value) return
+  guardandoPw.value = true
+  try {
+    await api.put(`/sucursales/${pwSucursalId.value}/password`, { password: pwIndividual.value })
+    $q.notify({ type: 'positive', message: 'Contraseña actualizada' })
+    pwIndividual.value = ''
+  } catch (e) {
+    $q.notify({ type: 'negative', message: e.response?.data?.error || 'Error al cambiar contraseña' })
+  } finally {
+    guardandoPw.value = false
+  }
+}
+
+async function cambiarPwTodas() {
+  if (!pwTodas.value) return
+  $q.dialog({
+    title: 'Confirmar cambio',
+    message: 'Esto cambiará la contraseña de TODAS las sucursales. ¿Continuar?',
+    cancel: { label: 'Cancelar', flat: true },
+    ok: { label: 'Cambiar todas', color: 'negative', unelevated: true }
+  }).onOk(async () => {
+    guardandoPw.value = true
+    try {
+      await api.put('/sucursales/password-todas', { password: pwTodas.value })
+      $q.notify({ type: 'positive', message: 'Contraseñas actualizadas en todas las sucursales' })
+      pwTodas.value = ''
+    } catch (e) {
+      $q.notify({ type: 'negative', message: e.response?.data?.error || 'Error al cambiar contraseñas' })
+    } finally {
+      guardandoPw.value = false
+    }
+  })
+}
+
+async function cerrarSesionesSucursales() {
+  $q.dialog({
+    title: 'Confirmar cierre',
+    message: 'Esto cerrará la sesión de TODAS las sucursales conectadas.',
+    cancel: { label: 'Cancelar', flat: true },
+    ok: { label: 'Cerrar sesiones', color: 'warning', textColor: 'dark', unelevated: true }
+  }).onOk(async () => {
+    cerrandoSesiones.value = true
+    try {
+      await api.post('/auth/cerrar-sesiones-sucursales')
+      $q.notify({ type: 'positive', message: 'Sesiones cerradas correctamente' })
+    } catch {
+      $q.notify({ type: 'negative', message: 'Error al cerrar sesiones' })
+    } finally {
+      cerrandoSesiones.value = false
+    }
+  })
+}
+
 function getRolColor(rol) { return { admin: 'negative', encargada: 'primary', soporte: 'positive' }[rol] || 'grey' }
-function getRolLabel(rol)  { return { admin: 'Administrador', encargada: 'Encargada', soporte: 'Soporte Técnico' }[rol] || rol }
+function getRolLabel(rol)  { return { admin: 'Administrador', encargada: 'Encargado/a', soporte: 'Soporte Técnico' }[rol] || rol }
 </script>
 
 <style scoped>

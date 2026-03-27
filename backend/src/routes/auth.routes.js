@@ -1,13 +1,14 @@
 import { Router } from 'express'
 import jwt from 'jsonwebtoken'
 import { isMock, supabaseAuth, supabase } from '../lib/supabase.js'
-import { getStore } from '../data/mock.js'
-import { authenticate } from '../middleware/auth.js'
+import { getStore, invalidateSucursalSessions } from '../data/mock.js'
+import { authenticate, requireRole } from '../middleware/auth.js'
+import { checkIPBlock, registerFailedAttempt, registerSuccessfulLogin, logSecurity } from '../middleware/security.js'
 
 const router = Router()
 
 // POST /api/auth/login
-router.post('/login', async (req, res) => {
+router.post('/login', checkIPBlock, async (req, res) => {
   const { email, password } = req.body
 
   if (!email || !password) {
@@ -20,11 +21,13 @@ router.post('/login', async (req, res) => {
     if (isMock) {
       const store = getStore()
 
-      // Buscar en users_auth
+      // Buscar en users_auth (acepta "gonzalez" o "gonzalez@ft.com")
+      const normalize = s => s.replace(/@ft\.com$/i, '').toLowerCase()
       const authUser = store.users_auth.find(
-        u => u.email === email && u.password === password
+        u => normalize(u.email) === normalize(email) && u.password === password
       )
       if (!authUser) {
+        registerFailedAttempt(req)
         return res.status(401).json({ error: 'Credenciales incorrectas' })
       }
 
@@ -50,6 +53,7 @@ router.post('/login', async (req, res) => {
       // Supabase real
       const { data, error } = await supabaseAuth.auth.signInWithPassword({ email, password })
       if (error || !data.user) {
+        registerFailedAttempt(req)
         return res.status(401).json({ error: 'Credenciales incorrectas' })
       }
 
@@ -75,8 +79,10 @@ router.post('/login', async (req, res) => {
     const token = jwt.sign(
       { sub: userId, nombre, rol, sucursal_id, sucursal_nombre },
       process.env.JWT_SECRET,
-      { expiresIn: '8h' }
+      { expiresIn: process.env.JWT_EXPIRES_SISTEMAS }
     )
+
+    registerSuccessfulLogin(req, { id: userId, nombre, rol })
 
     return res.json({
       token,
@@ -87,6 +93,60 @@ router.post('/login', async (req, res) => {
     console.error('Error en login:', err)
     return res.status(500).json({ error: 'Error interno del servidor' })
   }
+})
+
+// POST /api/auth/sucursal-login
+router.post('/sucursal-login', checkIPBlock, async (req, res) => {
+  const { sucursal_id, password } = req.body
+  if (!sucursal_id) return res.status(400).json({ error: 'Sucursal requerida' })
+  if (!password)    return res.status(400).json({ error: 'Contraseña requerida' })
+
+  try {
+    let sucursal_nombre, userId
+
+    if (isMock) {
+      const store = getStore()
+      const sucursal = store.sucursales.find(s => s.id === sucursal_id)
+      if (!sucursal) return res.status(404).json({ error: 'Sucursal no encontrada' })
+      if (sucursal.password !== password) {
+        registerFailedAttempt(req)
+        return res.status(401).json({ error: 'Contraseña incorrecta' })
+      }
+      sucursal_nombre = sucursal.nombre
+      const profile = store.profiles.find(p => p.sucursal_id === sucursal_id && p.rol === 'encargada')
+      userId = profile?.id || `branch_${sucursal_id}`
+    } else {
+      const { data: suc, error } = await supabase.from('sucursales').select('nombre, password').eq('id', sucursal_id).single()
+      if (error || !suc) return res.status(404).json({ error: 'Sucursal no encontrada' })
+      if (suc.password !== password) {
+        registerFailedAttempt(req)
+        return res.status(401).json({ error: 'Contraseña incorrecta' })
+      }
+      sucursal_nombre = suc.nombre
+      const { data: profile } = await supabase.from('profiles').select('id').eq('sucursal_id', sucursal_id).eq('rol', 'encargada').single()
+      userId = profile?.id || `branch_${sucursal_id}`
+    }
+
+    const token = jwt.sign(
+      { sub: userId, nombre: sucursal_nombre, rol: 'encargada', sucursal_id, sucursal_nombre },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRES_SUCURSAL }
+    )
+
+    registerSuccessfulLogin(req, { id: userId, nombre: sucursal_nombre, rol: 'encargada' })
+
+    return res.json({ token, user: { id: userId, nombre: sucursal_nombre, rol: 'encargada', sucursal_id, sucursal_nombre } })
+  } catch (err) {
+    console.error('Error sucursal-login:', err)
+    return res.status(500).json({ error: 'Error interno' })
+  }
+})
+
+// POST /api/auth/cerrar-sesiones-sucursales  (solo admin)
+router.post('/cerrar-sesiones-sucursales', authenticate, requireRole('admin'), (req, res) => {
+  invalidateSucursalSessions()
+  logSecurity('SESSIONS_INVALIDATED', { by: req.user.nombre, rol: req.user.rol })
+  return res.json({ ok: true, message: 'Sesiones de sucursales cerradas' })
 })
 
 // GET /api/auth/me

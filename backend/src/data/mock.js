@@ -24,108 +24,78 @@
 //   test@ft.com           / test        → Encargada TEST
 //   mapelo@ft.com         / mapelo      → Encargada MAPELO
 
+const PS  = process.env.MOCK_PASSWORD_SUCURSALES
+const PA  = process.env.MOCK_PASSWORD_ADMIN
+const PSP = process.env.MOCK_PASSWORD_SOPORTE
+const PU  = process.env.MOCK_PASSWORD_USUARIOS
+
 const initialData = {
   sucursales: [
-    { id: 'suc-gonzalez',    nombre: 'GONZALEZ',     created_at: '2025-01-01T00:00:00Z' },
-    { id: 'suc-mezcala',     nombre: 'MEZCALA',      created_at: '2025-01-01T00:00:00Z' },
-    { id: 'suc-lamanga',     nombre: 'LAMANGA',      created_at: '2025-01-01T00:00:00Z' },
-    { id: 'suc-colosio',     nombre: 'COLOSIO',      created_at: '2025-01-01T00:00:00Z' },
-    { id: 'suc-jardines',    nombre: 'JARDINES',     created_at: '2025-01-01T00:00:00Z' },
-    { id: 'suc-colonia',     nombre: 'COLONIA',      created_at: '2025-01-01T00:00:00Z' },
-    { id: 'suc-capilla',     nombre: 'CAPILLA',      created_at: '2025-01-01T00:00:00Z' },
-    { id: 'suc-centro',      nombre: 'CENTRO',       created_at: '2025-01-01T00:00:00Z' },
-    { id: 'suc-aguilillas',  nombre: 'AGUILILLAS',   created_at: '2025-01-01T00:00:00Z' },
-    { id: 'suc-pegueros',    nombre: 'PEGUEROS',     created_at: '2025-01-01T00:00:00Z' },
-    { id: 'suc-sanjose',     nombre: 'SANJOSE',      created_at: '2025-01-01T00:00:00Z' },
-    { id: 'suc-sanignacio',  nombre: 'SANIGNACIO',   created_at: '2025-01-01T00:00:00Z' },
-    { id: 'suc-zapotlanejo', nombre: 'ZAPOTLANEJO',  created_at: '2025-01-01T00:00:00Z' },
-    { id: 'suc-santabarbara',nombre: 'SANTABARBARA', created_at: '2025-01-01T00:00:00Z' },
-    { id: 'suc-yahualica',   nombre: 'YAHUALICA',    created_at: '2025-01-01T00:00:00Z' },
-    { id: 'suc-acatic',      nombre: 'ACATIC',       created_at: '2025-01-01T00:00:00Z' },
-    { id: 'suc-viveros',     nombre: 'VIVEROS',      created_at: '2025-01-01T00:00:00Z' },
-    { id: 'suc-arandas',     nombre: 'ARANDAS',      created_at: '2025-01-01T00:00:00Z' },
-    { id: 'suc-sistemas',    nombre: 'SISTEMAS',     created_at: '2025-01-01T00:00:00Z' },
-    { id: 'suc-test',        nombre: 'TEST',         created_at: '2025-01-01T00:00:00Z' },
-    { id: 'suc-mapelo',      nombre: 'MAPELO',       created_at: '2025-01-01T00:00:00Z' }
+    { id: 'suc-gonzalez',    nombre: 'GONZALEZ',     password: PS, email: '', created_at: '2025-01-01T00:00:00Z' },
+    { id: 'suc-mezcala',     nombre: 'MEZCALA',      password: PS, email: '', created_at: '2025-01-01T00:00:00Z' },
+    { id: 'suc-lamanga',     nombre: 'LAMANGA',      password: PS, email: '', created_at: '2025-01-01T00:00:00Z' },
+    { id: 'suc-colosio',     nombre: 'COLOSIO',      password: PS, email: '', created_at: '2025-01-01T00:00:00Z' },
+    { id: 'suc-jardines',    nombre: 'JARDINES',     password: PS, email: '', created_at: '2025-01-01T00:00:00Z' },
+    { id: 'suc-colonia',     nombre: 'COLONIA',      password: PS, email: '', created_at: '2025-01-01T00:00:00Z' },
+    { id: 'suc-capilla',     nombre: 'CAPILLA',      password: PS, email: '', created_at: '2025-01-01T00:00:00Z' },
+    { id: 'suc-centro',      nombre: 'CENTRO',       password: PS, email: '', created_at: '2025-01-01T00:00:00Z' },
+    { id: 'suc-aguilillas',  nombre: 'AGUILILLAS',   password: PS, email: '', created_at: '2025-01-01T00:00:00Z' },
+    { id: 'suc-pegueros',    nombre: 'PEGUEROS',     password: PS, email: '', created_at: '2025-01-01T00:00:00Z' },
+    { id: 'suc-sanjose',     nombre: 'SANJOSE',      password: PS, email: '', created_at: '2025-01-01T00:00:00Z' },
+    { id: 'suc-sanignacio',  nombre: 'SANIGNACIO',   password: PS, email: '', created_at: '2025-01-01T00:00:00Z' },
+    { id: 'suc-zapotlanejo', nombre: 'ZAPOTLANEJO',  password: PS, email: '', created_at: '2025-01-01T00:00:00Z' },
+    { id: 'suc-santabarbara',nombre: 'SANTABARBARA', password: PS, email: '', created_at: '2025-01-01T00:00:00Z' },
+    { id: 'suc-yahualica',   nombre: 'YAHUALICA',    password: PS, email: '', created_at: '2025-01-01T00:00:00Z' },
+    { id: 'suc-acatic',      nombre: 'ACATIC',       password: PS, email: '', created_at: '2025-01-01T00:00:00Z' },
+    { id: 'suc-viveros',     nombre: 'VIVEROS',      password: PS, email: '', created_at: '2025-01-01T00:00:00Z' },
+    { id: 'suc-arandas',     nombre: 'ARANDAS',      password: PS, email: '', created_at: '2025-01-01T00:00:00Z' },
+    { id: 'suc-mapelo',      nombre: 'MAPELO',       password: PS, email: '', created_at: '2025-01-01T00:00:00Z' }
   ],
   profiles: [
-    { id: 'user-admin',        nombre: 'Administrador',          rol: 'admin',     sucursal_id: null,               email: 'admin@ft.com' },
-    { id: 'user-soporte',      nombre: 'Soporte Técnico',        rol: 'soporte',   sucursal_id: null,               email: 'soporte@ft.com' },
-    { id: 'user-gonzalez',     nombre: 'Encargada GONZALEZ',     rol: 'encargada', sucursal_id: 'suc-gonzalez',     email: 'gonzalez@ft.com' },
-    { id: 'user-mezcala',      nombre: 'Encargada MEZCALA',      rol: 'encargada', sucursal_id: 'suc-mezcala',      email: 'mezcala@ft.com' },
-    { id: 'user-lamanga',      nombre: 'Encargada LAMANGA',      rol: 'encargada', sucursal_id: 'suc-lamanga',      email: 'lamanga@ft.com' },
-    { id: 'user-colosio',      nombre: 'Encargada COLOSIO',      rol: 'encargada', sucursal_id: 'suc-colosio',      email: 'colosio@ft.com' },
-    { id: 'user-jardines',     nombre: 'Encargada JARDINES',     rol: 'encargada', sucursal_id: 'suc-jardines',     email: 'jardines@ft.com' },
-    { id: 'user-colonia',      nombre: 'Encargada COLONIA',      rol: 'encargada', sucursal_id: 'suc-colonia',      email: 'colonia@ft.com' },
-    { id: 'user-capilla',      nombre: 'Encargada CAPILLA',      rol: 'encargada', sucursal_id: 'suc-capilla',      email: 'capilla@ft.com' },
-    { id: 'user-centro',       nombre: 'Encargada CENTRO',       rol: 'encargada', sucursal_id: 'suc-centro',       email: 'centro@ft.com' },
-    { id: 'user-aguilillas',   nombre: 'Encargada AGUILILLAS',   rol: 'encargada', sucursal_id: 'suc-aguilillas',   email: 'aguilillas@ft.com' },
-    { id: 'user-pegueros',     nombre: 'Encargada PEGUEROS',     rol: 'encargada', sucursal_id: 'suc-pegueros',     email: 'pegueros@ft.com' },
-    { id: 'user-sanjose',      nombre: 'Encargada SANJOSE',      rol: 'encargada', sucursal_id: 'suc-sanjose',      email: 'sanjose@ft.com' },
-    { id: 'user-sanignacio',   nombre: 'Encargada SANIGNACIO',   rol: 'encargada', sucursal_id: 'suc-sanignacio',   email: 'sanignacio@ft.com' },
-    { id: 'user-zapotlanejo',  nombre: 'Encargada ZAPOTLANEJO',  rol: 'encargada', sucursal_id: 'suc-zapotlanejo',  email: 'zapotlanejo@ft.com' },
-    { id: 'user-santabarbara', nombre: 'Encargada SANTABARBARA', rol: 'encargada', sucursal_id: 'suc-santabarbara', email: 'santabarbara@ft.com' },
-    { id: 'user-yahualica',    nombre: 'Encargada YAHUALICA',    rol: 'encargada', sucursal_id: 'suc-yahualica',    email: 'yahualica@ft.com' },
-    { id: 'user-acatic',       nombre: 'Encargada ACATIC',       rol: 'encargada', sucursal_id: 'suc-acatic',       email: 'acatic@ft.com' },
-    { id: 'user-viveros',      nombre: 'Encargada VIVEROS',      rol: 'encargada', sucursal_id: 'suc-viveros',      email: 'viveros@ft.com' },
-    { id: 'user-arandas',      nombre: 'Encargada ARANDAS',      rol: 'encargada', sucursal_id: 'suc-arandas',      email: 'arandas@ft.com' },
-    { id: 'user-sistemas',     nombre: 'Encargada SISTEMAS',     rol: 'encargada', sucursal_id: 'suc-sistemas',     email: 'sistemas@ft.com' },
-    { id: 'user-test',         nombre: 'Encargada TEST',         rol: 'encargada', sucursal_id: 'suc-test',         email: 'test@ft.com' },
-    { id: 'user-mapelo',       nombre: 'Encargada MAPELO',       rol: 'encargada', sucursal_id: 'suc-mapelo',       email: 'mapelo@ft.com' }
+    { id: 'user-admin',    nombre: 'Administrador',   rol: 'admin',   sucursal_id: null, email: 'admin@ft.com' },
+    { id: 'user-soporte',  nombre: 'Soporte Técnico', rol: 'soporte', sucursal_id: null, email: 'soporte@ft.com' },
+    { id: 'user-jorge',    nombre: 'Jorge',            rol: 'soporte', sucursal_id: null, email: 'jorge@ft.com' },
+    { id: 'user-elias',    nombre: 'Elias',            rol: 'soporte', sucursal_id: null, email: 'elias@ft.com' },
+    { id: 'user-jhonny',   nombre: 'Jhonny',           rol: 'soporte', sucursal_id: null, email: 'jhonny@ft.com' }
   ],
   users_auth: [
-    { id: 'user-admin',        email: 'admin@ft.com',        password: 'admin123' },
-    { id: 'user-soporte',      email: 'soporte@ft.com',      password: 'sop123' },
-    { id: 'user-gonzalez',     email: 'gonzalez@ft.com',     password: 'gonzalez' },
-    { id: 'user-mezcala',      email: 'mezcala@ft.com',      password: 'mezcala' },
-    { id: 'user-lamanga',      email: 'lamanga@ft.com',      password: 'lamanga' },
-    { id: 'user-colosio',      email: 'colosio@ft.com',      password: 'colosio' },
-    { id: 'user-jardines',     email: 'jardines@ft.com',     password: 'jardines' },
-    { id: 'user-colonia',      email: 'colonia@ft.com',      password: 'colonia' },
-    { id: 'user-capilla',      email: 'capilla@ft.com',      password: 'capilla' },
-    { id: 'user-centro',       email: 'centro@ft.com',       password: 'centro' },
-    { id: 'user-aguilillas',   email: 'aguilillas@ft.com',   password: 'aguilillas' },
-    { id: 'user-pegueros',     email: 'pegueros@ft.com',     password: 'pegueros' },
-    { id: 'user-sanjose',      email: 'sanjose@ft.com',      password: 'sanjose' },
-    { id: 'user-sanignacio',   email: 'sanignacio@ft.com',   password: 'sanignacio' },
-    { id: 'user-zapotlanejo',  email: 'zapotlanejo@ft.com',  password: 'zapotlanejo' },
-    { id: 'user-santabarbara', email: 'santabarbara@ft.com', password: 'santabarbara' },
-    { id: 'user-yahualica',    email: 'yahualica@ft.com',    password: 'yahualica' },
-    { id: 'user-acatic',       email: 'acatic@ft.com',       password: 'acatic' },
-    { id: 'user-viveros',      email: 'viveros@ft.com',      password: 'viveros' },
-    { id: 'user-arandas',      email: 'arandas@ft.com',      password: 'arandas' },
-    { id: 'user-sistemas',     email: 'sistemas@ft.com',     password: 'sistemas' },
-    { id: 'user-test',         email: 'test@ft.com',         password: 'test' },
-    { id: 'user-mapelo',       email: 'mapelo@ft.com',       password: 'mapelo' }
+    { id: 'user-admin',   email: 'admin@ft.com',   password: PA  },
+    { id: 'user-soporte', email: 'soporte@ft.com', password: PSP },
+    { id: 'user-jorge',   email: 'jorge@ft.com',   password: PU  },
+    { id: 'user-elias',   email: 'elias@ft.com',   password: PU  },
+    { id: 'user-jhonny',  email: 'jhonny@ft.com',  password: PU  }
   ],
   tickets: [
     {
-      id: 'tk1', folio: 'R-000001', titulo: 'Cancelar factura duplicada',
+      id: 'tk1', folio: 'R-000001', urgente: false, titulo: 'Cancelar factura duplicada',
       categoria: 'cancelacion_documento', tipo_documento: 'factura',
       folio_pvwin: 'FAC-2025-1045', folio_correcto: 'FAC-2025-1046',
       descripcion: 'Se generó una factura duplicada al cliente',
       estado: 'abierto', sucursal_id: 'suc-gonzalez', usuario_id: 'user-gonzalez',
+      asignado_a: null, adjuntos: [],
       detalle_falla: null, tipo_falla: null,
       created_at: '2025-03-20T10:00:00Z', updated_at: '2025-03-20T10:00:00Z'
     },
     {
-      id: 'tk2', folio: 'R-000002', titulo: 'PVWIN no abre módulo de ventas',
+      id: 'tk2', folio: 'R-000002', urgente: false, titulo: 'PVWIN no abre módulo de ventas',
       categoria: 'falla_pvwin', tipo_documento: null,
       folio_pvwin: null, folio_correcto: null,
       descripcion: '',
       detalle_falla: 'Al abrir el módulo de ventas aparece error "Acceso denegado" y cierra el programa.',
       tipo_falla: null,
       estado: 'en_proceso', sucursal_id: 'suc-mezcala', usuario_id: 'user-mezcala',
+      asignado_a: 'user-soporte', adjuntos: [],
       created_at: '2025-03-21T09:30:00Z', updated_at: '2025-03-21T11:00:00Z'
     },
     {
-      id: 'tk3', folio: 'R-000003', titulo: 'Computadora no enciende',
+      id: 'tk3', folio: 'R-000003', urgente: false, titulo: 'Computadora no enciende',
       categoria: 'falla_computadora', tipo_documento: null,
       folio_pvwin: null, folio_correcto: null,
       descripcion: 'La computadora de caja 2 no enciende desde esta mañana',
       detalle_falla: 'Al presionar el botón de encendido no hay respuesta, ni luz ni ventilador.',
       tipo_falla: 'sin_encendido',
       estado: 'resuelto', sucursal_id: 'suc-gonzalez', usuario_id: 'user-gonzalez',
+      asignado_a: 'user-jorge', adjuntos: [],
       created_at: '2025-03-22T08:00:00Z', updated_at: '2025-03-23T14:00:00Z'
     }
   ],
@@ -171,7 +141,13 @@ const initialData = {
     { id: 'tfe-14', tipo: 'tipos_falla_equipo', label: 'UPS / No Break',           value: 'ups',                  grupo: 'Periféricos', orden: 14, activo: true },
     { id: 'tfe-15', tipo: 'tipos_falla_equipo', label: 'Teléfono / Conmutador',    value: 'telefono',             grupo: 'Periféricos', orden: 15, activo: true },
     { id: 'tfe-16', tipo: 'tipos_falla_equipo', label: 'Otro',                     value: 'otro',                 grupo: 'Otro',        orden: 16, activo: true }
-  ]
+  ],
+
+  notificaciones: [],
+
+  notas_internas: [],
+
+  sugerencias: []
 }
 
 // Store en memoria (se inicializa una sola vez al arrancar el servidor)
@@ -187,6 +163,12 @@ export function getStore() {
 export function saveStore(newStore) {
   _store = newStore
 }
+
+// Timestamp de invalidación global para sesiones de sucursales (Unix segundos)
+let _sucursalInvalidatedAt = 0
+
+export function getSucursalInvalidatedAt() { return _sucursalInvalidatedAt }
+export function invalidateSucursalSessions() { _sucursalInvalidatedAt = Math.floor(Date.now() / 1000) }
 
 // Contador de folio en memoria
 let _folioSeq = 3

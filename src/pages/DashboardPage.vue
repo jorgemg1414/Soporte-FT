@@ -12,11 +12,12 @@
         </div>
       </div>
       <q-space />
+      <q-btn flat round icon="refresh" color="white" @click="recargar" :loading="ticketsStore.loading" />
     </div>
 
     <!-- Tarjetas de estadísticas -->
     <div class="row q-col-gutter-md q-mb-lg">
-      <div class="col-6 col-sm-3" v-for="card in statCards" :key="card.label">
+      <div class="col-6 col-sm-4" v-for="card in statCards" :key="card.label">
         <q-card bordered class="stat-card" :style="`border-top: 4px solid ${card.borderColor}`">
           <q-card-section class="q-pa-md">
             <div class="row items-center">
@@ -42,12 +43,8 @@
             <div class="text-h6 text-weight-bold">Tickets — Últimos 14 días</div>
           </q-card-section>
           <q-card-section>
-            <apexchart
-              type="area"
-              height="200"
-              :options="chartDia.options"
-              :series="chartDia.series"
-            />
+            <apexchart type="area" height="200"
+              :options="chartDia.options" :series="chartDia.series" />
           </q-card-section>
         </q-card>
       </div>
@@ -56,25 +53,19 @@
     <!-- Fila: donut estado + barras categoría + barras sucursal -->
     <div class="row q-col-gutter-md q-mb-lg">
 
-      <!-- Donut: por estado -->
       <div class="col-12 col-md-4">
-        <q-card bordered full-height>
+        <q-card bordered>
           <q-card-section class="row items-center q-pb-none">
             <q-icon name="donut_large" color="primary" size="22px" class="q-mr-sm" />
             <div class="text-h6 text-weight-bold">Por Estado</div>
           </q-card-section>
           <q-card-section>
-            <apexchart
-              type="donut"
-              height="260"
-              :options="chartEstado.options"
-              :series="chartEstado.series"
-            />
+            <apexchart type="donut" height="260"
+              :options="chartEstado.options" :series="chartEstado.series" />
           </q-card-section>
         </q-card>
       </div>
 
-      <!-- Barras: por categoría -->
       <div class="col-12 col-md-4">
         <q-card bordered>
           <q-card-section class="row items-center q-pb-none">
@@ -82,17 +73,12 @@
             <div class="text-h6 text-weight-bold">Por Categoría</div>
           </q-card-section>
           <q-card-section>
-            <apexchart
-              type="bar"
-              height="260"
-              :options="chartCategoria.options"
-              :series="chartCategoria.series"
-            />
+            <apexchart type="bar" height="260"
+              :options="chartCategoria.options" :series="chartCategoria.series" />
           </q-card-section>
         </q-card>
       </div>
 
-      <!-- Barras horizontales: por sucursal (solo admin/soporte) -->
       <div class="col-12 col-md-4" v-if="authStore.profile?.rol !== 'encargada'">
         <q-card bordered>
           <q-card-section class="row items-center q-pb-none">
@@ -100,21 +86,36 @@
             <div class="text-h6 text-weight-bold">Por Sucursal</div>
           </q-card-section>
           <q-card-section>
-            <apexchart
-              type="bar"
-              height="260"
-              :options="chartSucursal.options"
-              :series="chartSucursal.series"
-            />
+            <apexchart type="bar" height="260"
+              :options="chartSucursal.options" :series="chartSucursal.series" />
           </q-card-section>
         </q-card>
       </div>
 
     </div>
 
-    <!-- Tickets recientes -->
+    <!-- Fila: técnico + tickets recientes -->
     <div class="row q-col-gutter-md">
-      <div class="col-12">
+
+      <!-- Barras: por técnico -->
+      <div class="col-12 col-md-4" v-if="authStore.profile?.rol !== 'encargada'">
+        <q-card bordered>
+          <q-card-section class="row items-center q-pb-none">
+            <q-icon name="engineering" color="positive" size="22px" class="q-mr-sm" />
+            <div class="text-h6 text-weight-bold">Resueltos por técnico</div>
+          </q-card-section>
+          <q-card-section>
+            <div v-if="!(ticketsStore.stats.por_tecnico?.length)" class="text-center text-grey-5 q-py-xl">
+              <q-icon name="person_off" size="40px" /><div class="text-caption q-mt-sm">Sin datos aún</div>
+            </div>
+            <apexchart v-else type="bar" height="260"
+              :options="chartTecnico.options" :series="chartTecnico.series" />
+          </q-card-section>
+        </q-card>
+      </div>
+
+      <!-- Reportes recientes -->
+      <div class="col-12" :class="authStore.profile?.rol !== 'encargada' ? 'col-md-8' : ''">
         <q-card bordered>
           <q-card-section class="row items-center">
             <q-icon name="history" color="primary" size="22px" class="q-mr-sm" />
@@ -158,6 +159,7 @@
           </q-list>
         </q-card>
       </div>
+
     </div>
 
   </q-page>
@@ -171,44 +173,55 @@ import { useQuasar } from 'quasar'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 
-const authStore   = useAuthStore()
+const authStore    = useAuthStore()
 const ticketsStore = useTicketsStore()
-const $q          = useQuasar()
+const $q           = useQuasar()
 
 onMounted(async () => {
   await Promise.all([ticketsStore.fetchTickets(), ticketsStore.fetchStats()])
 })
 
-const isDark     = computed(() => $q.dark.isActive)
-const fechaHoy   = computed(() => format(new Date(), "EEEE dd 'de' MMMM yyyy", { locale: es }))
+async function recargar() {
+  await Promise.all([ticketsStore.fetchTickets(), ticketsStore.fetchStats()])
+}
+
+const isDark       = computed(() => $q.dark.isActive)
+const fechaHoy     = computed(() => format(new Date(), "EEEE dd 'de' MMMM yyyy", { locale: es }))
 const recentTickets = computed(() => ticketsStore.tickets.slice(0, 6))
 
 // ── Stat cards ───────────────────────────────────────────────────────────────
-const statCards = computed(() => [
-  { label: 'Total',      value: ticketsStore.stats.total      || 0, icon: 'confirmation_number',    color: 'primary',  bgColor: 'rgba(25,118,210,0.12)',  borderColor: '#1976D2' },
-  { label: 'Abiertos',   value: ticketsStore.stats.abiertos   || 0, icon: 'radio_button_unchecked', color: 'warning',  bgColor: 'rgba(242,192,55,0.12)',  borderColor: '#F2C037' },
-  { label: 'En Proceso', value: ticketsStore.stats.en_proceso || 0, icon: 'sync',                   color: 'info',     bgColor: 'rgba(49,204,236,0.12)',  borderColor: '#31CCEC' },
-  { label: 'Resueltos',  value: ticketsStore.stats.resueltos  || 0, icon: 'check_circle',           color: 'positive', bgColor: 'rgba(33,186,69,0.12)',   borderColor: '#21BA45' }
-])
+const statCards = computed(() => {
+  const prom = ticketsStore.stats.tiempo_promedio_horas
+  const promLabel = prom != null
+    ? (prom < 24 ? `${prom}h` : `${Math.floor(prom / 24)}d`)
+    : '—'
+
+  return [
+    { label: 'Total',           value: ticketsStore.stats.total           || 0,      icon: 'confirmation_number',    color: 'primary',  bgColor: 'rgba(25,118,210,0.12)',  borderColor: '#1976D2' },
+    { label: 'Abiertos',        value: ticketsStore.stats.abiertos        || 0,      icon: 'radio_button_unchecked', color: 'warning',  bgColor: 'rgba(242,192,55,0.12)',  borderColor: '#F2C037' },
+    { label: 'En Proceso',      value: ticketsStore.stats.en_proceso      || 0,      icon: 'sync',                   color: 'info',     bgColor: 'rgba(49,204,236,0.12)',  borderColor: '#31CCEC' },
+    { label: 'Resueltos',       value: ticketsStore.stats.resueltos       || 0,      icon: 'check_circle',           color: 'positive', bgColor: 'rgba(33,186,69,0.12)',   borderColor: '#21BA45' },
+    { label: 'Urgentes (>24h)', value: ticketsStore.stats.tickets_urgentes || 0,     icon: 'warning',                color: 'negative', bgColor: 'rgba(193,0,21,0.10)',    borderColor: '#C10015' },
+    { label: 'Prom. resolución', value: promLabel,                                   icon: 'timer',                  color: 'purple',   bgColor: 'rgba(156,39,176,0.10)',   borderColor: '#9C27B0' }
+  ]
+})
 
 // ── Colores base ─────────────────────────────────────────────────────────────
-const textColor  = computed(() => isDark.value ? '#e0e0e0' : '#424242')
-const gridColor  = computed(() => isDark.value ? '#333333' : '#eeeeee')
+const textColor = computed(() => isDark.value ? '#e0e0e0' : '#424242')
+const gridColor = computed(() => isDark.value ? '#333333' : '#eeeeee')
 
 // ── Gráfica: tickets por día ─────────────────────────────────────────────────
 const chartDia = computed(() => {
-  const dias  = ticketsStore.stats.por_dia || []
-  const cats  = dias.map(d => d.fecha.slice(5)) // MM-DD
-  const vals  = dias.map(d => d.total)
+  const dias = ticketsStore.stats.por_dia || []
   return {
-    series: [{ name: 'Tickets', data: vals }],
+    series: [{ name: 'Tickets', data: dias.map(d => d.total) }],
     options: {
-      chart: { toolbar: { show: false }, background: 'transparent', sparkline: { enabled: false } },
+      chart: { toolbar: { show: false }, background: 'transparent' },
       theme: { mode: isDark.value ? 'dark' : 'light' },
       stroke: { curve: 'smooth', width: 3 },
       fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: 0.4, opacityTo: 0.05 } },
       colors: ['#1976D2'],
-      xaxis: { categories: cats, labels: { style: { colors: textColor.value } }, axisBorder: { show: false }, axisTicks: { show: false } },
+      xaxis: { categories: dias.map(d => d.fecha.slice(5)), labels: { style: { colors: textColor.value } }, axisBorder: { show: false }, axisTicks: { show: false } },
       yaxis: { labels: { style: { colors: textColor.value } }, min: 0, tickAmount: 3, forceNiceScale: true },
       grid: { borderColor: gridColor.value },
       dataLabels: { enabled: false },
@@ -243,16 +256,15 @@ const catLabels = {
   otro:                  'Otro'
 }
 const chartCategoria = computed(() => {
-  const cats = ticketsStore.stats.por_categoria || []
-  const sorted = [...cats].sort((a, b) => b.total - a.total)
+  const cats = [...(ticketsStore.stats.por_categoria || [])].sort((a, b) => b.total - a.total)
   return {
-    series: [{ name: 'Tickets', data: sorted.map(c => c.total) }],
+    series: [{ name: 'Tickets', data: cats.map(c => c.total) }],
     options: {
       chart: { toolbar: { show: false }, background: 'transparent' },
       theme: { mode: isDark.value ? 'dark' : 'light' },
       plotOptions: { bar: { borderRadius: 6, distributed: true } },
       colors: ['#C10015', '#1976D2', '#F2C037', '#9E9E9E'],
-      xaxis: { categories: sorted.map(c => catLabels[c.categoria] || c.categoria), labels: { style: { colors: textColor.value } } },
+      xaxis: { categories: cats.map(c => catLabels[c.categoria] || c.categoria), labels: { style: { colors: textColor.value } } },
       yaxis: { labels: { style: { colors: textColor.value } }, min: 0, forceNiceScale: true },
       grid: { borderColor: gridColor.value },
       legend: { show: false },
@@ -276,6 +288,26 @@ const chartSucursal = computed(() => {
       yaxis: { categories: sucs.map(s => s.nombre), labels: { style: { colors: textColor.value } } },
       grid: { borderColor: gridColor.value },
       dataLabels: { enabled: false },
+      tooltip: { theme: isDark.value ? 'dark' : 'light' }
+    }
+  }
+})
+
+// ── Gráfica: barras por técnico ──────────────────────────────────────────────
+const chartTecnico = computed(() => {
+  const tecs = ticketsStore.stats.por_tecnico || []
+  return {
+    series: [{ name: 'Resueltos', data: tecs.map(t => t.total) }],
+    options: {
+      chart: { toolbar: { show: false }, background: 'transparent' },
+      theme: { mode: isDark.value ? 'dark' : 'light' },
+      plotOptions: { bar: { horizontal: true, borderRadius: 4, distributed: true } },
+      colors: ['#21BA45', '#1976D2', '#9C27B0', '#F2C037', '#C10015'],
+      xaxis: { labels: { style: { colors: textColor.value } }, min: 0, forceNiceScale: true },
+      yaxis: { categories: tecs.map(t => t.nombre), labels: { style: { colors: textColor.value } } },
+      grid: { borderColor: gridColor.value },
+      legend: { show: false },
+      dataLabels: { enabled: true, style: { colors: ['#fff'] } },
       tooltip: { theme: isDark.value ? 'dark' : 'light' }
     }
   }

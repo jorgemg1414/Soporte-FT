@@ -8,9 +8,14 @@
           {{ ticket.sucursales?.nombre }} · {{ ticket.profiles?.nombre }} · {{ formatDate(ticket.created_at) }}
         </div>
       </div>
-      <q-badge :color="getEstadoColor(ticket.estado)" style="font-size: 13px; padding: 6px 14px; border-radius: 20px">
-        {{ getEstadoLabel(ticket.estado) }}
-      </q-badge>
+      <div class="row q-gutter-xs items-center">
+        <q-badge v-if="ticket.urgente" color="negative" style="font-size: 12px; padding: 5px 10px; border-radius: 20px">
+          <q-icon name="warning" size="13px" class="q-mr-xs" />urgente
+        </q-badge>
+        <q-badge :color="getEstadoColor(ticket.estado)" style="font-size: 13px; padding: 6px 14px; border-radius: 20px">
+          {{ getEstadoLabel(ticket.estado) }}
+        </q-badge>
+      </div>
     </div>
 
     <div class="row q-col-gutter-md">
@@ -20,7 +25,7 @@
         <q-card bordered class="q-mb-md">
           <q-card-section>
             <div class="text-h6 q-mb-md">Gestionar Ticket</div>
-            <div class="row q-gutter-xs">
+            <div class="row q-gutter-xs q-mb-sm">
               <q-btn v-for="accion in accionesEstado" :key="accion.value"
                 :label="accion.label" :color="accion.color" :icon="accion.icon"
                 :disable="ticket.estado === accion.value"
@@ -28,6 +33,22 @@
                 :loading="cambiandoEstado" @click="cambiarEstado(accion.value)"
                 size="sm" />
             </div>
+            <q-btn
+              :label="ticket.urgente ? 'Quitar urgencia' : 'Marcar como urgente'"
+              :color="ticket.urgente ? 'grey-6' : 'negative'"
+              :icon="ticket.urgente ? 'flag' : 'outlined_flag'"
+              unelevated class="full-width q-mb-sm"
+              :loading="marcandoUrgente" @click="toggleUrgente"
+              size="sm" />
+
+            <q-separator class="q-my-sm" />
+            <div class="text-subtitle2 q-mb-xs">Asignar Técnico</div>
+            <q-select v-model="tecnicoSeleccionado" outlined dense
+              :options="tecnicos" option-value="id" option-label="nombre"
+              emit-value map-options clearable label="Técnico asignado"
+              @update:model-value="asignarTecnico">
+              <template #prepend><q-icon name="engineering" /></template>
+            </q-select>
           </q-card-section>
         </q-card>
 
@@ -113,6 +134,10 @@
                   <div class="text-caption text-grey-6">Tipo de documento</div>
                   <div class="text-body1 text-weight-medium">{{ getTipoDocLabel(ticket.tipo_documento) }}</div>
                 </div>
+                <div class="col-12 col-sm-4" v-if="ticket.tipo_traspaso">
+                  <div class="text-caption text-grey-6">Tipo de traspaso</div>
+                  <div class="text-body1 text-weight-medium" style="text-transform: capitalize">{{ ticket.tipo_traspaso }}</div>
+                </div>
                 <div class="col-12 col-sm-4">
                   <div class="text-caption text-grey-6">Folio a cancelar</div>
                   <div class="text-negative text-body1 text-weight-bold">{{ ticket.folio_pvwin || '—' }}</div>
@@ -120,6 +145,18 @@
                 <div class="col-12 col-sm-4" v-if="ticket.folio_correcto">
                   <div class="text-caption text-grey-6">Folio correcto</div>
                   <div class="text-positive text-body1 text-weight-bold">{{ ticket.folio_correcto }}</div>
+                </div>
+              </div>
+              <div v-if="ticket.foto_cancelar || ticket.foto_correcto" class="row q-col-gutter-md q-mb-md">
+                <div class="col-12 col-sm-6" v-if="ticket.foto_cancelar">
+                  <div class="text-caption text-grey-6 q-mb-xs">Foto documento a cancelar</div>
+                  <q-img :src="ticket.foto_cancelar" style="border-radius: 10px; max-height: 260px" fit="contain"
+                    class="bg-grey-2 cursor-pointer" @click="fotoAmpliada = ticket.foto_cancelar; dialogFoto = true" />
+                </div>
+                <div class="col-12 col-sm-6" v-if="ticket.foto_correcto">
+                  <div class="text-caption text-grey-6 q-mb-xs">Foto documento correcto</div>
+                  <q-img :src="ticket.foto_correcto" style="border-radius: 10px; max-height: 260px" fit="contain"
+                    class="bg-grey-2 cursor-pointer" @click="fotoAmpliada = ticket.foto_correcto; dialogFoto = true" />
                 </div>
               </div>
             </template>
@@ -146,9 +183,59 @@
 
             <template v-if="ticket.descripcion">
               <q-separator class="q-my-md" />
-              <div class="text-caption text-grey-6">Observaciones adicionales</div>
+              <div class="text-caption text-grey-6">
+                {{ ticket.categoria === 'cancelacion_documento' ? 'Motivo de la cancelación' : 'Observaciones adicionales' }}
+              </div>
               <div class="text-body1 q-mt-xs" style="white-space: pre-wrap">{{ ticket.descripcion }}</div>
             </template>
+          </q-card-section>
+        </q-card>
+
+        <!-- Dialog foto ampliada -->
+        <q-dialog v-model="dialogFoto" @hide="fotoAmpliada = null">
+          <q-card style="max-width: 95vw; max-height: 90vh; background: black">
+            <q-img :src="fotoAmpliada" fit="contain" style="max-height: 85vh" />
+            <q-card-actions align="center">
+              <q-btn flat color="white" icon="close" label="Cerrar" v-close-popup />
+            </q-card-actions>
+          </q-card>
+        </q-dialog>
+
+        <!-- Notas Internas (solo soporte/admin) -->
+        <q-card bordered class="q-mb-md"
+          v-if="authStore.profile?.rol === 'soporte' || authStore.profile?.rol === 'admin'">
+          <q-card-section>
+            <div class="text-h6"><q-icon name="lock" class="q-mr-xs" color="orange" />Notas Internas</div>
+            <div class="text-caption text-grey-6">Solo visible para el equipo de soporte</div>
+          </q-card-section>
+          <q-separator />
+          <q-list separator>
+            <q-item v-for="nota in notasInternas" :key="nota.id" class="q-py-sm">
+              <q-item-section avatar top>
+                <q-avatar color="orange" text-color="white" size="32px">
+                  {{ nota.profiles?.nombre?.charAt(0)?.toUpperCase() }}
+                </q-avatar>
+              </q-item-section>
+              <q-item-section>
+                <q-item-label class="row items-center q-gutter-xs">
+                  <span class="text-weight-medium">{{ nota.profiles?.nombre }}</span>
+                  <span class="text-grey-6 text-caption">{{ formatDate(nota.created_at) }}</span>
+                </q-item-label>
+                <div class="q-mt-xs" style="white-space: pre-wrap">{{ nota.contenido }}</div>
+              </q-item-section>
+            </q-item>
+            <q-item v-if="notasInternas.length === 0">
+              <q-item-section class="text-center text-grey-5 q-py-sm">Sin notas internas</q-item-section>
+            </q-item>
+          </q-list>
+          <q-separator />
+          <q-card-section>
+            <q-input v-model="nuevaNota" outlined label="Agregar nota interna..." type="textarea" rows="2" dense>
+              <template #append>
+                <q-btn flat round icon="send" color="orange"
+                  :disable="!nuevaNota.trim()" :loading="enviandoNota" @click="enviarNota" />
+              </template>
+            </q-input>
           </q-card-section>
         </q-card>
 
@@ -216,9 +303,17 @@ const $q = useQuasar()
 const ticket = ref(null)
 const comentarios = ref([])
 const historial = ref([])
+const notasInternas = ref([])
+const tecnicos = ref([])
+const tecnicoSeleccionado = ref(null)
 const nuevoComentario = ref('')
+const nuevaNota = ref('')
 const enviando = ref(false)
+const enviandoNota = ref(false)
 const cambiandoEstado = ref(false)
+const marcandoUrgente = ref(false)
+const fotoAmpliada = ref(null)
+const dialogFoto = ref(false)
 
 const accionesEstado = [
   { label: 'Marcar En Proceso', value: 'en_proceso', color: 'info',    icon: 'sync' },
@@ -231,16 +326,30 @@ onMounted(loadAll)
 
 async function loadAll() {
   const id = route.params.id
+  const esSoporte = authStore.profile?.rol === 'soporte' || authStore.profile?.rol === 'admin'
 
-  const [ticketRes, comsRes, histRes] = await Promise.all([
+  const promises = [
     api.get(`/tickets/${id}`),
     api.get(`/tickets/${id}/comentarios`),
     api.get(`/tickets/${id}/historial`)
-  ])
+  ]
+  if (esSoporte) {
+    promises.push(api.get(`/tickets/${id}/notas`))
+    promises.push(api.get('/usuarios'))
+  }
 
-  ticket.value      = ticketRes.data
-  comentarios.value = comsRes.data  || []
-  historial.value   = histRes.data  || []
+  const results = await Promise.all(promises)
+
+  ticket.value      = results[0].data
+  comentarios.value = results[1].data || []
+  historial.value   = results[2].data || []
+
+  if (esSoporte) {
+    notasInternas.value = results[3].data || []
+    const usuarios = results[4].data || []
+    tecnicos.value = usuarios.filter(u => u.rol === 'soporte' || u.rol === 'admin')
+    tecnicoSeleccionado.value = ticket.value.asignado_a || null
+  }
 }
 
 async function enviarComentario() {
@@ -254,6 +363,45 @@ async function enviarComentario() {
     $q.notify({ type: 'negative', message: 'Error al enviar el comentario' })
   } finally {
     enviando.value = false
+  }
+}
+
+async function enviarNota() {
+  if (!nuevaNota.value.trim()) return
+  enviandoNota.value = true
+  try {
+    const { data } = await api.post(`/tickets/${route.params.id}/notas`, { contenido: nuevaNota.value.trim() })
+    notasInternas.value.push(data)
+    nuevaNota.value = ''
+  } catch {
+    $q.notify({ type: 'negative', message: 'Error al crear nota interna' })
+  } finally {
+    enviandoNota.value = false
+  }
+}
+
+async function asignarTecnico(tecnicoId) {
+  try {
+    const { data } = await api.put(`/tickets/${route.params.id}/asignar`, { asignado_a: tecnicoId })
+    ticket.value = data
+    await loadAll()
+    $q.notify({ type: 'positive', message: tecnicoId ? 'Técnico asignado' : 'Asignación removida' })
+  } catch {
+    $q.notify({ type: 'negative', message: 'Error al asignar técnico' })
+  }
+}
+
+async function toggleUrgente() {
+  marcandoUrgente.value = true
+  try {
+    const { data } = await api.put(`/tickets/${route.params.id}/urgente`, { urgente: !ticket.value.urgente })
+    ticket.value.urgente = data.urgente
+    await loadAll()
+    $q.notify({ type: ticket.value.urgente ? 'warning' : 'positive', message: ticket.value.urgente ? 'Ticket marcado como urgente' : 'Urgencia removida' })
+  } catch {
+    $q.notify({ type: 'negative', message: 'Error al cambiar urgencia' })
+  } finally {
+    marcandoUrgente.value = false
   }
 }
 
@@ -277,7 +425,7 @@ function getCategoryIcon(cat){ return { cancelacion_documento: 'cancel', falla_p
 function getCategoryLabel(cat){ return { cancelacion_documento: 'Cancelación de Documento', falla_pvwin: 'Falla en PVWIN', falla_computadora: 'Falla en Equipo', otro: 'Otro' }[cat] || cat }
 function getTipoDocLabel(tipo){ return { factura: 'Factura', remision: 'Remisión', traspaso: 'Traspaso', compra: 'Compra', nota_credito: 'Nota de Crédito', devolucion: 'Devolución', otro: 'Otro' }[tipo] || tipo }
 function getRolColor(rol)    { return { admin: 'negative', encargada: 'primary', soporte: 'positive' }[rol] || 'grey' }
-function getRolLabel(rol)    { return { admin: 'Admin', encargada: 'Encargada', soporte: 'Soporte' }[rol] || rol }
+function getRolLabel(rol)    { return { admin: 'Admin', encargada: 'Encargado/a', soporte: 'Soporte' }[rol] || rol }
 function formatDate(dateStr) { if (!dateStr) return '—'; return format(new Date(dateStr), 'dd/MM/yyyy HH:mm', { locale: es }) }
 </script>
 

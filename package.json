@@ -18,7 +18,8 @@
     "quasar": "^2.16.5",
     "vue": "^3.4.21",
     "vue-router": "^4.3.0",
-    "vue3-apexcharts": "^1.11.1"
+    "vue3-apexcharts": "^1.11.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@quasar/vite-plugin": "^1.7.0",

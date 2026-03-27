@@ -6,7 +6,7 @@
 
           <q-card-section class="text-center q-pt-xl q-pb-md">
             <div class="text-h5 text-weight-bold text-primary">Centro de Soporte</div>
-            <div class="text-grey-6 q-mt-xs" style="font-size: 13px">Ingresa tus credenciales para continuar</div>
+            <div class="text-grey-6 q-mt-xs" style="font-size: 13px">Acceso para equipo de Sistemas</div>
           </q-card-section>
 
           <!-- Formulario -->
@@ -16,7 +16,7 @@
               <q-input
                 v-model="usuario"
                 outlined
-                placeholder="Ej: gonzalez, centro, admin"
+                placeholder="Ingrese su usuario"
                 autocomplete="username"
                 class="q-mb-md"
                 :rules="[val => !!val || 'El usuario es requerido']"
@@ -61,6 +61,11 @@
           </q-card-section>
 
         </q-card>
+
+        <div class="text-center q-mt-md">
+          <q-btn flat color="grey-5" label="Soy encargado/a de sucursal" icon="store"
+            size="sm" to="/sucursal-select" />
+        </div>
       </q-page>
     </q-page-container>
   </q-layout>
@@ -84,8 +89,7 @@ const loading = ref(false)
 async function handleLogin() {
   loading.value = true
   try {
-    const email = usuario.value.trim().toLowerCase() + '@ft.com'
-    const data = await authStore.login(email, password.value)
+    const data = await authStore.login(usuario.value.trim().toLowerCase(), password.value)
     const rol = data.user?.rol
     router.push(rol === 'encargada' ? '/sucursal' : '/panel')
   } catch {

@@ -16,10 +16,10 @@ router.get('/', async (req, res) => {
       const profiles = store.profiles
         .slice()
         .sort((a, b) => a.nombre.localeCompare(b.nombre))
-        .map(p => ({
-          ...p,
-          sucursales: store.sucursales.find(s => s.id === p.sucursal_id) || null
-        }))
+        .map(p => {
+          const suc = store.sucursales.find(s => s.id === p.sucursal_id)
+          return { ...p, sucursales: suc ? { id: suc.id, nombre: suc.nombre } : null }
+        })
       return res.json(profiles)
     }
 
@@ -73,11 +73,9 @@ router.post('/', async (req, res) => {
       store.profiles.push(newProfile)
       saveStore(store)
 
-      const sucursal = sucursal_id
-        ? store.sucursales.find(s => s.id === sucursal_id) || null
-        : null
+      const suc = sucursal_id ? store.sucursales.find(s => s.id === sucursal_id) : null
 
-      return res.status(201).json({ ...newProfile, sucursales: sucursal })
+      return res.status(201).json({ ...newProfile, sucursales: suc ? { id: suc.id, nombre: suc.nombre } : null })
     }
 
     // Supabase: crear usuario en auth con service role
@@ -137,11 +135,9 @@ router.put('/:id', async (req, res) => {
       }
       saveStore(store)
 
-      const sucursal = sucursal_id
-        ? store.sucursales.find(s => s.id === sucursal_id) || null
-        : null
+      const suc = sucursal_id ? store.sucursales.find(s => s.id === sucursal_id) : null
 
-      return res.json({ ...store.profiles[idx], sucursales: sucursal })
+      return res.json({ ...store.profiles[idx], sucursales: suc ? { id: suc.id, nombre: suc.nombre } : null })
     }
 
     const { data, error } = await supabase
@@ -157,6 +153,35 @@ router.put('/:id', async (req, res) => {
   } catch (err) {
     console.error('Error updateUsuario:', err)
     res.status(500).json({ error: 'Error al actualizar el usuario' })
+  }
+})
+
+// ─── DELETE /api/usuarios/:id ────────────────────────────────────────────────
+router.delete('/:id', async (req, res) => {
+  try {
+    const { id } = req.params
+
+    if (isMock) {
+      const store = getStore()
+      const idx = store.profiles.findIndex(p => p.id === id)
+      if (idx === -1) return res.status(404).json({ error: 'Usuario no encontrado' })
+
+      store.profiles.splice(idx, 1)
+      const authIdx = store.users_auth.findIndex(u => u.id === id)
+      if (authIdx !== -1) store.users_auth.splice(authIdx, 1)
+      saveStore(store)
+
+      return res.json({ ok: true })
+    }
+
+    await supabase.auth.admin.deleteUser(id)
+    await supabase.from('profiles').delete().eq('id', id)
+
+    return res.json({ ok: true })
+
+  } catch (err) {
+    console.error('Error deleteUsuario:', err)
+    res.status(500).json({ error: 'Error al eliminar el usuario' })
   }
 })
 

@@ -3,6 +3,11 @@ import { useAuthStore } from '../stores/auth'
 
 const routes = [
   {
+    path: '/sucursal-select',
+    component: () => import('../pages/SucursalSelectPage.vue'),
+    meta: { public: true }
+  },
+  {
     path: '/login',
     component: () => import('../pages/LoginPage.vue'),
     meta: { public: true }
@@ -14,7 +19,7 @@ const routes = [
     children: [
       {
         path: '',
-        redirect: to => {
+        redirect: () => {
           const authStore = useAuthStore()
           const rol = authStore.profile?.rol
           if (rol === 'encargada') return '/sucursal'
@@ -50,6 +55,10 @@ const routes = [
         component: () => import('../pages/TicketDetallePage.vue')
       },
       {
+        path: 'sugerencias',
+        component: () => import('../pages/SugerenciasPage.vue')
+      },
+      {
         path: 'admin',
         component: () => import('../pages/AdminPage.vue'),
         meta: { roles: ['admin'] }
@@ -68,14 +77,11 @@ router.beforeEach(async (to) => {
   const authStore = useAuthStore()
 
   if (!authStore.initialized) {
-    try {
-      await authStore.init()
-    } catch {
-      authStore.initialized = true
-    }
+    try { await authStore.init() } catch { authStore.initialized = true }
   }
 
   if (to.meta.public) {
+    // Si ya está autenticado, redirigir a su página
     if (authStore.user) {
       const rol = authStore.profile?.rol
       return rol === 'encargada' ? '/sucursal' : '/panel'
@@ -83,7 +89,8 @@ router.beforeEach(async (to) => {
     return true
   }
 
-  if (!authStore.user) return '/login'
+  // Sin sesión → selección de sucursal
+  if (!authStore.user) return '/sucursal-select'
 
   if (to.meta.roles && !to.meta.roles.includes(authStore.profile?.rol)) {
     const rol = authStore.profile?.rol

@@ -12,15 +12,7 @@
       <q-card-section>
         <q-form ref="formRef" @submit="handleSubmit" class="q-gutter-md">
 
-          <div class="text-subtitle1 text-primary text-weight-bold">
-            <q-icon name="info" class="q-mr-xs" /> Información General
-          </div>
-
-          <q-input v-model="form.titulo" outlined label="Título del ticket *"
-            hint="Resumen breve del problema"
-            :rules="[val => !!val || 'El título es requerido']" />
-
-          <q-select v-model="form.categoria" outlined label="Categoría *"
+          <q-select v-model="form.categoria" outlined label="Tipo de problema *"
             :options="categorias" emit-value map-options
             :rules="[val => !!val || 'Selecciona una categoría']"
             @update:model-value="resetCamposCategoria">
@@ -41,17 +33,52 @@
             <q-select v-model="form.tipo_documento" outlined label="Tipo de documento a cancelar *"
               :options="tiposDocumento" emit-value map-options
               :rules="[val => !!val || 'Selecciona el tipo de documento']" />
-            <div class="row q-col-gutter-md justify-center">
-              <div class="col-12 col-sm-5">
-                <q-input v-model="form.folio_pvwin" outlined label="Folio a cancelar *"
-                  hint="Número de folio incorrecto o a cancelar"
-                  :rules="[val => !!val || 'El folio es requerido']" />
+            <q-select v-if="form.tipo_documento === 'traspaso'" v-model="form.tipo_traspaso"
+              outlined label="Tipo de traspaso *"
+              :options="[{ label: 'Entrada', value: 'entrada' }, { label: 'Salida', value: 'salida' }]"
+              emit-value map-options
+              :rules="[val => !!val || 'Indica si es entrada o salida']" />
+
+            <q-input v-model="form.folio_pvwin" outlined label="Folio a cancelar *"
+              hint="Número de folio incorrecto o a cancelar"
+              :rules="[val => !!val || 'El folio es requerido']" />
+
+            <!-- Foto documento a cancelar -->
+            <div>
+              <div class="text-caption text-grey-6 q-mb-xs">Foto del documento a cancelar (opcional)</div>
+              <input type="file" accept="image/*" capture="environment" ref="inputFotoCancelar"
+                style="display:none" @change="e => setFoto(e, 'foto_cancelar')" />
+              <div class="row items-center q-gutter-sm">
+                <q-btn flat color="primary" icon="camera_alt" label="Tomar foto"
+                  @click="inputFotoCancelar.click()" />
+                <q-btn v-if="form.foto_cancelar" flat color="negative" icon="delete" dense
+                  @click="form.foto_cancelar = null" />
               </div>
-              <div class="col-12 col-sm-5">
-                <q-input v-model="form.folio_correcto" outlined label="Folio correcto (opcional)"
-                  hint="Folio que reemplaza al cancelado, si aplica" />
-              </div>
+              <q-img v-if="form.foto_cancelar" :src="form.foto_cancelar"
+                style="max-height: 220px; border-radius: 10px; margin-top: 8px" fit="contain" />
             </div>
+
+            <q-input v-model="form.folio_correcto" outlined label="Folio correcto (opcional)"
+              hint="Folio que reemplaza al cancelado, si aplica" />
+
+            <!-- Foto documento correcto -->
+            <div>
+              <div class="text-caption text-grey-6 q-mb-xs">Foto del documento correcto (opcional)</div>
+              <input type="file" accept="image/*" capture="environment" ref="inputFotoCorrector"
+                style="display:none" @change="e => setFoto(e, 'foto_correcto')" />
+              <div class="row items-center q-gutter-sm">
+                <q-btn flat color="primary" icon="camera_alt" label="Tomar foto"
+                  @click="inputFotoCorrector.click()" />
+                <q-btn v-if="form.foto_correcto" flat color="negative" icon="delete" dense
+                  @click="form.foto_correcto = null" />
+              </div>
+              <q-img v-if="form.foto_correcto" :src="form.foto_correcto"
+                style="max-height: 220px; border-radius: 10px; margin-top: 8px" fit="contain" />
+            </div>
+
+            <q-input v-model="form.descripcion" outlined label="Motivo de la cancelación *"
+              type="textarea" rows="3"
+              :rules="[val => !!val || 'Indica el motivo de la cancelación']" />
           </template>
 
           <!-- Falla PVWIN -->
@@ -65,6 +92,8 @@
             <q-input v-model="form.detalle_falla" outlined label="Descripción de la falla *"
               type="textarea" rows="5" hint="Describe con detalle qué está fallando en PVWIN"
               :rules="[val => !!val || 'La descripción es requerida']" />
+            <q-input v-model="form.descripcion" outlined label="Observaciones adicionales (opcional)"
+              type="textarea" rows="3" hint="Cualquier información extra que pueda ayudar a soporte" />
           </template>
 
           <!-- Falla de equipo -->
@@ -79,6 +108,8 @@
             <q-input v-model="form.detalle_falla" outlined label="Descripción del problema *"
               type="textarea" rows="5" hint="Describe qué le ocurre al equipo"
               :rules="[val => !!val || 'La descripción es requerida']" />
+            <q-input v-model="form.descripcion" outlined label="Observaciones adicionales (opcional)"
+              type="textarea" rows="3" hint="Cualquier información extra que pueda ayudar a soporte" />
           </template>
 
           <!-- Otro -->
@@ -90,11 +121,9 @@
             <q-input v-model="form.detalle_falla" outlined label="Descripción del problema *"
               type="textarea" rows="5"
               :rules="[val => !!val || 'La descripción es requerida']" />
+            <q-input v-model="form.descripcion" outlined label="Observaciones adicionales (opcional)"
+              type="textarea" rows="3" hint="Cualquier información extra que pueda ayudar a soporte" />
           </template>
-
-          <q-separator />
-          <q-input v-model="form.descripcion" outlined label="Observaciones adicionales (opcional)"
-            type="textarea" rows="3" hint="Cualquier información extra que pueda ayudar a soporte" />
 
           <div class="row justify-center q-gutter-sm q-pt-sm">
             <q-btn flat label="Cancelar" @click="$router.back()" />
@@ -108,7 +137,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, watch, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTicketsStore } from '../stores/tickets'
 import { useQuasar } from 'quasar'
@@ -118,10 +147,14 @@ const router = useRouter()
 const ticketsStore = useTicketsStore()
 const $q = useQuasar()
 const loading = ref(false)
+const formRef = ref(null)
+const inputFotoCancelar = ref(null)
+const inputFotoCorrector = ref(null)
 const form = ref({
   titulo: '', categoria: null, descripcion: '',
   tipo_documento: null, folio_pvwin: '', folio_correcto: '',
-  detalle_falla: '', tipo_falla: null
+  detalle_falla: '', tipo_falla: null,
+  foto_cancelar: null, foto_correcto: null, tipo_traspaso: null
 })
 
 const categorias = [
@@ -161,18 +194,40 @@ onMounted(async () => {
   }
 })
 
+watch(() => form.value.tipo_documento, () => { form.value.tipo_traspaso = null })
+
+function setFoto(e, campo) {
+  const file = e.target.files[0]
+  if (!file) return
+  const reader = new FileReader()
+  reader.onload = ev => { form.value[campo] = ev.target.result }
+  reader.readAsDataURL(file)
+  e.target.value = ''
+}
+
 function resetCamposCategoria() {
   form.value.tipo_documento = null
   form.value.folio_pvwin    = ''
   form.value.folio_correcto = ''
   form.value.detalle_falla  = ''
   form.value.tipo_falla     = null
+  form.value.descripcion    = ''
+  form.value.foto_cancelar  = null
+  form.value.foto_correcto  = null
+  form.value.tipo_traspaso  = null
 }
 
 async function handleSubmit() {
   loading.value = true
   try {
-    const ticket = await ticketsStore.crearTicket({ ...form.value })
+    const titulosAuto = {
+      cancelacion_documento: 'Cancelación de Documento',
+      falla_pvwin:           'Falla en PVWIN',
+      falla_computadora:     'Falla en Equipo / Computadora',
+      otro:                  'Otro'
+    }
+    const payload = { ...form.value, titulo: titulosAuto[form.value.categoria] || form.value.categoria }
+    const ticket = await ticketsStore.crearTicket(payload)
     $q.notify({ type: 'positive', message: `Ticket ${ticket.folio} creado correctamente` })
     router.push(`/tickets/${ticket.id}`)
   } catch (e) {
