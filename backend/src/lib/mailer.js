@@ -154,6 +154,157 @@ export async function notificarCambioEstado({ to, folio, titulo, sucursal, estad
   }
 }
 
+export async function notificarNuevoTicket({ folio, titulo, sucursal, categoria, descripcion }) {
+  const to = process.env.SISTEMAS_EMAIL
+  if (!isConfigured() || !to) return
+
+  const catLabels = {
+    cancelacion_documento: 'Cancelación de documento',
+    falla_pvwin:           'Falla PVWIN',
+    falla_computadora:     'Falla de equipo',
+    otro:                  'Otro'
+  }
+
+  const html = `
+<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f5f5f5;font-family:Arial,sans-serif">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f5;padding:32px 0">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.1)">
+
+        <tr><td style="background:linear-gradient(135deg,#E65100,#F57C00);padding:28px 32px">
+          <p style="margin:0;font-size:20px;font-weight:bold;color:#ffffff">Centro de Soporte FT</p>
+          <p style="margin:6px 0 0;font-size:13px;color:#FFE0B2">Nuevo reporte recibido</p>
+        </td></tr>
+
+        <tr><td style="padding:28px 32px 0">
+          <table cellpadding="0" cellspacing="0">
+            <tr><td style="background:#E65100;border-radius:20px;padding:6px 16px">
+              <span style="color:#ffffff;font-size:13px;font-weight:bold">🆕 Nuevo Reporte</span>
+            </td></tr>
+          </table>
+          <h2 style="margin:16px 0 6px;font-size:20px;color:#212121">${folio}</h2>
+          <p style="margin:0;font-size:15px;color:#424242">${titulo}</p>
+        </td></tr>
+
+        <tr><td style="padding:20px 32px">
+          <table width="100%" cellpadding="0" cellspacing="0" style="background:#FFF3E0;border-radius:8px;padding:16px;margin-bottom:16px">
+            <tr>
+              <td style="font-size:13px;color:#757575;padding:4px 0">Sucursal</td>
+              <td style="font-size:13px;color:#212121;font-weight:bold;text-align:right">${sucursal}</td>
+            </tr>
+            <tr>
+              <td style="font-size:13px;color:#757575;padding:4px 0">Categoría</td>
+              <td style="font-size:13px;color:#E65100;font-weight:bold;text-align:right">${catLabels[categoria] || categoria}</td>
+            </tr>
+            <tr>
+              <td style="font-size:13px;color:#757575;padding:4px 0">Folio</td>
+              <td style="font-size:13px;color:#1976D2;font-weight:bold;text-align:right">${folio}</td>
+            </tr>
+          </table>
+          ${descripcion ? `
+          <div style="background:#F5F5F5;border-left:4px solid #E65100;border-radius:4px;padding:12px 16px">
+            <p style="margin:0;font-size:13px;color:#757575;margin-bottom:4px">Descripción:</p>
+            <p style="margin:0;font-size:14px;color:#212121;line-height:1.5">${descripcion}</p>
+          </div>` : ''}
+        </td></tr>
+
+        <tr><td style="padding:16px 32px 28px">
+          <p style="margin:0;font-size:12px;color:#9E9E9E;text-align:center">
+            Este correo es generado automáticamente por el sistema Centro de Soporte FT.<br>
+            Por favor no respondas a este mensaje.
+          </p>
+        </td></tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`
+
+  try {
+    const transport = createTransport()
+    await transport.sendMail({
+      from:    `"Centro de Soporte FT" <${process.env.SMTP_USER}>`,
+      to,
+      subject: `🆕 Nuevo reporte ${folio} — ${sucursal}`,
+      html
+    })
+    console.log(`[Mailer] Nuevo ticket notificado a sistemas: ${folio}`)
+  } catch (err) {
+    console.error('[Mailer] Error al notificar nuevo ticket:', err.message)
+  }
+}
+
+export async function notificarAsignacion({ to, folio, titulo, sucursal }) {
+  if (!isConfigured()) {
+    console.log(`[Mailer] Sin configurar — omitiendo notificación (asignación) para ${to || 'sin email'}`)
+    return
+  }
+  if (!to) return
+
+  const html = `
+<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f5f5f5;font-family:Arial,sans-serif">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f5;padding:32px 0">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.1)">
+        <tr><td style="background:linear-gradient(135deg,#1565C0,#1976D2);padding:28px 32px">
+          <p style="margin:0;font-size:20px;font-weight:bold;color:#ffffff">Centro de Soporte FT</p>
+          <p style="margin:6px 0 0;font-size:13px;color:#90CAF9">Se te asignó un ticket</p>
+        </td></tr>
+        <tr><td style="padding:28px 32px 0">
+          <table cellpadding="0" cellspacing="0">
+            <tr><td style="background:#1976D2;border-radius:20px;padding:6px 16px">
+              <span style="color:#ffffff;font-size:13px;font-weight:bold">📋 Asignado</span>
+            </td></tr>
+          </table>
+          <h2 style="margin:16px 0 6px;font-size:20px;color:#212121">${folio}</h2>
+          <p style="margin:0;font-size:15px;color:#424242">${titulo}</p>
+        </td></tr>
+        <tr><td style="padding:20px 32px">
+          <p style="margin:0 0 16px;font-size:15px;color:#424242;line-height:1.6">Se te ha asignado un reporte de soporte. Por favor atiéndelo a la brevedad.</p>
+          <table width="100%" cellpadding="0" cellspacing="0" style="background:#F5F5F5;border-radius:8px;padding:16px">
+            <tr>
+              <td style="font-size:13px;color:#757575;padding:4px 0">Sucursal</td>
+              <td style="font-size:13px;color:#212121;font-weight:bold;text-align:right">${sucursal}</td>
+            </tr>
+            <tr>
+              <td style="font-size:13px;color:#757575;padding:4px 0">Folio</td>
+              <td style="font-size:13px;color:#1976D2;font-weight:bold;text-align:right">${folio}</td>
+            </tr>
+          </table>
+        </td></tr>
+        <tr><td style="padding:16px 32px 28px">
+          <p style="margin:0;font-size:12px;color:#9E9E9E;text-align:center">
+            Este correo es generado automáticamente por el sistema Centro de Soporte FT.<br>
+            Por favor no respondas a este mensaje.
+          </p>
+        </td></tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`
+
+  try {
+    const transport = createTransport()
+    await transport.sendMail({
+      from:    `"Centro de Soporte FT" <${process.env.SMTP_USER}>`,
+      to,
+      subject: `📋 Se te asignó el reporte ${folio}`,
+      html
+    })
+    console.log(`[Mailer] Email asignación enviado a ${to}`)
+  } catch (err) {
+    console.error('[Mailer] Error al enviar email asignación:', err.message)
+  }
+}
+
 export async function notificarComentario({ to, folio, titulo, sucursal, comentario, tecnico }) {
   if (!isConfigured()) {
     console.log(`[Mailer] Sin configurar — omitiendo notificación (comentario) para ${to || 'sin email'}`)

@@ -4,10 +4,10 @@
 const failedAttempts = new Map() // IP → { count, blockedUntil }
 
 const BLOCK_THRESHOLDS = [
-  { attempts: 5,  blockMinutes: 1  },
-  { attempts: 10, blockMinutes: 5  },
-  { attempts: 20, blockMinutes: 15 },
-  { attempts: 30, blockMinutes: 60 },
+  { attempts: 15, blockMinutes: 1  },
+  { attempts: 30, blockMinutes: 5  },
+  { attempts: 50, blockMinutes: 15 },
+  { attempts: 80, blockMinutes: 30 },
 ]
 
 function getClientIP(req) {
@@ -68,6 +68,13 @@ export function registerSuccessfulLogin(req, userInfo) {
     nombre: userInfo.nombre,
     rol: userInfo.rol
   })
+}
+
+// Limpiar todos los bloqueos (llamado desde endpoint admin)
+export function clearAllBlocks() {
+  const count = failedAttempts.size
+  failedAttempts.clear()
+  return count
 }
 
 // Limpiar registros viejos cada 30 minutos para no acumular memoria

@@ -23,7 +23,7 @@
         </q-btn>
 
         <!-- Campana de notificaciones -->
-        <q-btn flat round icon="notifications" color="white" size="sm">
+        <q-btn flat round icon="notifications" color="white" size="sm" :class="notifCount > 0 ? 'campana-shake' : ''" @click="notifCount > 0 ? null : null">
           <q-badge v-if="notifCount > 0" color="negative" floating>{{ notifCount > 9 ? '9+' : notifCount }}</q-badge>
           <q-menu anchor="bottom right" self="top right" style="min-width: 340px; max-width: 400px">
             <q-list>
@@ -126,6 +126,10 @@
             <q-item-section avatar><q-icon name="speed" /></q-item-section>
             <q-item-section>Panel Rápido</q-item-section>
           </q-item>
+          <q-item clickable v-ripple to="/kanban" active-class="item-active" class="rounded-borders q-mb-xs">
+            <q-item-section avatar><q-icon name="view_kanban" /></q-item-section>
+            <q-item-section>Kanban</q-item-section>
+          </q-item>
           <q-item clickable v-ripple to="/tickets" active-class="item-active" class="rounded-borders q-mb-xs">
             <q-item-section avatar><q-icon name="confirmation_number" /></q-item-section>
             <q-item-section>Todos los Reportes</q-item-section>
@@ -189,6 +193,10 @@ const drawer = ref(false)
 const notificaciones = ref([])
 const notifCount = ref(0)
 let notifInterval = null
+let inicializado = false
+
+const notifIconos = { asignacion: 'person_add', estado: 'sync', comentario: 'chat', info: 'info' }
+const notifColores = { asignacion: 'info', estado: 'primary', comentario: 'purple', info: 'grey-7' }
 
 async function fetchNotificaciones() {
   try {
@@ -196,8 +204,32 @@ async function fetchNotificaciones() {
       api.get('/notificaciones'),
       api.get('/notificaciones/no-leidas')
     ])
-    notificaciones.value = listRes.data || []
-    notifCount.value = countRes.data?.count || 0
+    const nuevas = listRes.data || []
+    const nuevoCount = countRes.data?.count || 0
+
+    // Si ya teníamos datos y llegaron notificaciones nuevas → mostrar burbujas
+    if (inicializado && nuevoCount > notifCount.value) {
+      const idsConocidos = new Set(notificaciones.value.map(n => n.id))
+      const recienLlegadas = nuevas.filter(n => !n.leida && !idsConocidos.has(n.id))
+
+      recienLlegadas.forEach(n => {
+        $q.notify({
+          message: n.mensaje,
+          icon: notifIconos[n.tipo] || 'notifications',
+          color: notifColores[n.tipo] || 'primary',
+          position: 'top-right',
+          timeout: 6000,
+          progress: true,
+          actions: n.ticket_id
+            ? [{ label: 'Ver ticket', color: 'white', handler: () => { router.push(`/tickets/${n.ticket_id}`) } }]
+            : []
+        })
+      })
+    }
+
+    notificaciones.value = nuevas
+    notifCount.value = nuevoCount
+    inicializado = true
   } catch { /* silenciar */ }
 }
 
@@ -268,6 +300,19 @@ async function handleLogout() {
 }
 .sidebar-header {
   min-height: 80px;
+}
+.campana-shake {
+  animation: campana 2s ease-in-out infinite;
+  transform-origin: top center;
+}
+@keyframes campana {
+  0%, 100% { transform: rotate(0deg); }
+  10%       { transform: rotate(12deg); }
+  20%       { transform: rotate(-10deg); }
+  30%       { transform: rotate(8deg); }
+  40%       { transform: rotate(-6deg); }
+  50%       { transform: rotate(4deg); }
+  60%       { transform: rotate(0deg); }
 }
 </style>
 

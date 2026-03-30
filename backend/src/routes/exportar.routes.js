@@ -1,7 +1,6 @@
 import { Router } from 'express'
 import ExcelJS from 'exceljs'
 import PDFDocument from 'pdfkit'
-import { isMock, supabase } from '../lib/supabase.js'
 import db from '../lib/database.js'
 import { authenticate, requireRole } from '../middleware/auth.js'
 
@@ -22,39 +21,23 @@ const categoriaLabels = {
   otro: 'Otro'
 }
 
-async function getTicketsData() {
-  if (isMock) {
-    const tickets = db.prepare('SELECT * FROM tickets ORDER BY created_at DESC').all()
-    return tickets.map(t => {
-      const suc = t.sucursal_id ? db.prepare('SELECT nombre FROM sucursales WHERE id = ?').get(t.sucursal_id) : null
-      const tecnico = t.asignado_a ? db.prepare('SELECT nombre FROM profiles WHERE id = ?').get(t.asignado_a) : null
-      return {
-        folio: t.folio,
-        titulo: t.titulo,
-        categoria: categoriaLabels[t.categoria] || t.categoria,
-        estado: estadoLabels[t.estado] || t.estado,
-        sucursal: suc?.nombre || '—',
-        urgente: t.urgente ? 'Sí' : 'No',
-        asignado_a: tecnico?.nombre || '—',
-        created_at: t.created_at?.slice(0, 10) || '',
-        updated_at: t.updated_at?.slice(0, 10) || ''
-      }
-    })
-  }
-
-  const { data, error } = await supabase
-    .from('tickets').select('*, sucursales(nombre)').order('created_at', { ascending: false })
-  if (error) throw error
-  return (data || []).map(t => ({
-    folio: t.folio, titulo: t.titulo,
-    categoria: categoriaLabels[t.categoria] || t.categoria,
-    estado: estadoLabels[t.estado] || t.estado,
-    sucursal: t.sucursales?.nombre || '—',
-    urgente: t.urgente ? 'Sí' : 'No',
-    asignado_a: '—',
-    created_at: t.created_at?.slice(0, 10) || '',
-    updated_at: t.updated_at?.slice(0, 10) || ''
-  }))
+function getTicketsData() {
+  const tickets = db.prepare('SELECT * FROM tickets ORDER BY created_at DESC').all()
+  return tickets.map(t => {
+    const suc = t.sucursal_id ? db.prepare('SELECT nombre FROM sucursales WHERE id = ?').get(t.sucursal_id) : null
+    const tecnico = t.asignado_a ? db.prepare('SELECT nombre FROM profiles WHERE id = ?').get(t.asignado_a) : null
+    return {
+      folio: t.folio,
+      titulo: t.titulo,
+      categoria: categoriaLabels[t.categoria] || t.categoria,
+      estado: estadoLabels[t.estado] || t.estado,
+      sucursal: suc?.nombre || '—',
+      urgente: t.urgente ? 'Sí' : 'No',
+      asignado_a: tecnico?.nombre || '—',
+      created_at: t.created_at?.slice(0, 10) || '',
+      updated_at: t.updated_at?.slice(0, 10) || ''
+    }
+  })
 }
 
 const columns = [
@@ -70,9 +53,9 @@ const columns = [
 ]
 
 // ─── GET /api/exportar/excel ──────────────────────────────────────────────────
-router.get('/excel', async (req, res) => {
+router.get('/excel', (req, res) => {
   try {
-    const tickets = await getTicketsData()
+    const tickets = getTicketsData()
     const workbook = new ExcelJS.Workbook()
     workbook.creator = 'Centro de Soporte'
     const sheet = workbook.addWorksheet('Tickets')
@@ -83,8 +66,7 @@ router.get('/excel', async (req, res) => {
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     res.setHeader('Content-Disposition', `attachment; filename=tickets_${new Date().toISOString().slice(0,10)}.xlsx`)
-    await workbook.xlsx.write(res)
-    res.end()
+    workbook.xlsx.write(res).then(() => res.end())
 
   } catch (err) {
     console.error('Error exportExcel:', err)
@@ -93,9 +75,9 @@ router.get('/excel', async (req, res) => {
 })
 
 // ─── GET /api/exportar/pdf ────────────────────────────────────────────────────
-router.get('/pdf', async (req, res) => {
+router.get('/pdf', (req, res) => {
   try {
-    const tickets = await getTicketsData()
+    const tickets = getTicketsData()
     const doc = new PDFDocument({ margin: 30, size: 'LETTER', layout: 'landscape' })
 
     res.setHeader('Content-Type', 'application/pdf')

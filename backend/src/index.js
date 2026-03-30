@@ -11,7 +11,6 @@ import catalogosRoutes from './routes/catalogos.routes.js'
 import notificacionesRoutes from './routes/notificaciones.routes.js'
 import sugerenciasRoutes from './routes/sugerencias.routes.js'
 import exportarRoutes from './routes/exportar.routes.js'
-import { isMock } from './lib/supabase.js'
 
 // Validar variables de entorno requeridas
 const requiredEnv = [
@@ -95,5 +94,5 @@ app.get('/api/health', (_, res) => res.json({ ok: true }))
 
 app.listen(PORT, () => {
   console.log(`Backend corriendo en http://localhost:${PORT}`)
-  console.log(`Modo: ${isMock ? 'MOCK local' : 'Supabase'}`)
+  console.log('Base de datos: SQLite (better-sqlite3)')
 })

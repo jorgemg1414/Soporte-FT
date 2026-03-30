@@ -34,6 +34,12 @@
     <!-- Filtros -->
     <q-card bordered class="q-mb-md">
       <q-card-section>
+        <div class="row items-center q-mb-sm">
+          <span class="text-caption text-grey-6 text-weight-medium">FILTROS</span>
+          <q-badge v-if="filtrosActivos > 0" color="primary" class="q-ml-sm">{{ filtrosActivos }}</q-badge>
+          <q-space />
+          <q-btn v-if="filtrosActivos > 0" flat dense size="sm" icon="clear_all" label="Limpiar" color="grey-6" @click="limpiarFiltros" />
+        </div>
         <div class="row q-col-gutter-sm">
           <!-- Búsqueda general -->
           <div class="col-12 col-sm-4">
@@ -55,6 +61,23 @@
           <div v-if="authStore.profile?.rol !== 'encargada'" class="col-12 col-sm-3">
             <q-select v-model="filtros.sucursal" outlined dense label="Sucursal"
               :options="sucursalOptions" emit-value map-options clearable />
+          </div>
+          <!-- Técnico (solo admin/soporte) -->
+          <div v-if="authStore.profile?.rol !== 'encargada'" class="col-12 col-sm-3">
+            <q-select v-model="filtros.tecnico" outlined dense label="Técnico asignado"
+              :options="tecnicosOptions" emit-value map-options clearable />
+          </div>
+          <!-- Fecha desde -->
+          <div class="col-6 col-sm-2">
+            <q-input v-model="filtros.fechaDesde" outlined dense label="Desde" type="date" clearable />
+          </div>
+          <!-- Fecha hasta -->
+          <div class="col-6 col-sm-2">
+            <q-input v-model="filtros.fechaHasta" outlined dense label="Hasta" type="date" clearable />
+          </div>
+          <!-- Solo urgentes -->
+          <div class="col-auto flex items-center">
+            <q-toggle v-model="filtros.urgente" label="Solo urgentes" color="negative" dense />
           </div>
         </div>
       </q-card-section>
@@ -96,13 +119,10 @@
         </template>
         <template #body-cell-tiempo="props">
           <q-td :props="props">
-            <span v-if="props.row.estado === 'resuelto'" class="text-positive text-caption">
-              {{ calcTiempoResolucion(props.row) }}
-            </span>
-            <span v-else :class="esUrgente(props.row) ? 'text-negative text-weight-bold text-caption' : 'text-grey-6 text-caption'">
-              <q-icon v-if="esUrgente(props.row)" name="warning" size="12px" class="q-mr-xs" />
-              {{ tiempoTranscurrido(props.row) }}
-            </span>
+            <q-badge :color="slaBadgeColor(props.row)" style="font-size: 11px; padding: 3px 8px">
+              <q-icon :name="slaIcon(props.row)" size="12px" class="q-mr-xs" />
+              {{ slaLabel(props.row) }}
+            </q-badge>
           </q-td>
         </template>
         <template #body-cell-created_at="props">
@@ -114,7 +134,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useTicketsStore } from '../stores/tickets'
 import api from '../lib/api'
@@ -122,12 +142,21 @@ import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import * as XLSX from 'xlsx'
 import { usePolling } from '../composables/usePolling'
+import { useSLA } from '../composables/useSLA'
 
 const authStore = useAuthStore()
 const ticketsStore = useTicketsStore()
+const { slaLabel, slaBadgeColor, slaIcon } = useSLA()
 
-const filtros = ref({ busqueda: '', estado: null, categoria: null, sucursal: null })
+const FILTROS_KEY = 'tickets_filtros'
+const filtrosDefault = { busqueda: '', estado: null, categoria: null, sucursal: null, tecnico: null, urgente: false, fechaDesde: null, fechaHasta: null }
+
+const stored = localStorage.getItem(FILTROS_KEY)
+const filtros = ref(stored ? { ...filtrosDefault, ...JSON.parse(stored) } : { ...filtrosDefault })
 const sucursales = ref([])
+const tecnicos = ref([])
+
+watch(filtros, v => localStorage.setItem(FILTROS_KEY, JSON.stringify(v)), { deep: true })
 
 const estadoOptions = [
   { label: 'Abierto',    value: 'abierto' },
@@ -144,6 +173,9 @@ const categoriaOptions = [
 const sucursalOptions = computed(() =>
   sucursales.value.map(s => ({ label: s.nombre, value: s.nombre }))
 )
+const tecnicosOptions = computed(() =>
+  tecnicos.value.map(t => ({ label: t.nombre, value: t.id }))
+)
 
 const columns = [
   { name: 'folio',      label: 'Folio',      field: 'folio',                       align: 'left',   sortable: true },
@@ -154,6 +186,15 @@ const columns = [
   { name: 'tiempo',     label: 'Tiempo',     field: 'created_at',                  align: 'left' },
   { name: 'created_at', label: 'Fecha',      field: 'created_at',                  align: 'left',   sortable: true }
 ]
+
+const filtrosActivos = computed(() => {
+  const f = filtros.value
+  return [f.busqueda, f.estado, f.categoria, f.sucursal, f.tecnico, f.urgente || null, f.fechaDesde, f.fechaHasta].filter(Boolean).length
+})
+
+function limpiarFiltros() {
+  filtros.value = { ...filtrosDefault }
+}
 
 const ticketsFiltrados = computed(() => {
   const b = filtros.value.busqueda?.toLowerCase().trim() || ''
@@ -166,15 +207,23 @@ const ticketsFiltrados = computed(() => {
     const matchEstado    = !filtros.value.estado    || t.estado    === filtros.value.estado
     const matchCategoria = !filtros.value.categoria || t.categoria === filtros.value.categoria
     const matchSucursal  = !filtros.value.sucursal  || t.sucursales?.nombre === filtros.value.sucursal
-    return matchBusqueda && matchEstado && matchCategoria && matchSucursal
+    const matchTecnico   = !filtros.value.tecnico   || t.asignado_a === filtros.value.tecnico
+    const matchUrgente   = !filtros.value.urgente   || t.urgente === true
+    const matchDesde     = !filtros.value.fechaDesde || t.created_at >= filtros.value.fechaDesde
+    const matchHasta     = !filtros.value.fechaHasta || t.created_at.slice(0, 10) <= filtros.value.fechaHasta
+    return matchBusqueda && matchEstado && matchCategoria && matchSucursal && matchTecnico && matchUrgente && matchDesde && matchHasta
   })
 })
 
 onMounted(async () => {
   await ticketsStore.fetchTickets()
   if (authStore.profile?.rol !== 'encargada') {
-    const { data } = await api.get('/sucursales')
-    sucursales.value = data || []
+    const [sucRes, tecRes] = await Promise.all([
+      api.get('/sucursales'),
+      api.get('/usuarios')
+    ])
+    sucursales.value = sucRes.data || []
+    tecnicos.value = (tecRes.data || []).filter(u => u.rol === 'soporte' || u.rol === 'admin')
   }
 })
 
@@ -226,17 +275,6 @@ async function exportarPDF() {
   } catch {
     // fallback silencioso
   }
-}
-
-function esUrgente(t) {
-  return t.urgente === true
-}
-
-function tiempoTranscurrido(t) {
-  const horas = Math.floor((Date.now() - new Date(t.created_at)) / 3600000)
-  if (horas < 1) return '<1h'
-  if (horas < 24) return `${horas}h`
-  return `${Math.floor(horas / 24)}d`
 }
 
 function calcTiempoResolucion(t) {

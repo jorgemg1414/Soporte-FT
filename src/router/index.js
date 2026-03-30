@@ -42,6 +42,11 @@ const routes = [
         meta: { roles: ['admin', 'soporte'] }
       },
       {
+        path: 'kanban',
+        component: () => import('../pages/KanbanPage.vue'),
+        meta: { roles: ['admin', 'soporte'] }
+      },
+      {
         path: 'tickets',
         component: () => import('../pages/TicketsPage.vue')
       },

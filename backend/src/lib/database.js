@@ -128,6 +128,9 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_notas_ticket       ON notas_internas(ticket_id);
 `)
 
+// ─── Migraciones (columnas agregadas después del schema inicial) ──────────────
+try { db.prepare("ALTER TABLE sucursales ADD COLUMN email_notificaciones INTEGER DEFAULT 1").run() } catch { /* ya existe */ }
+
 // ─── Seed (solo si la tabla sucursales está vacía) ────────────────────────────
 const count = db.prepare('SELECT COUNT(*) as n FROM sucursales').get()
 

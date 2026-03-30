@@ -202,7 +202,8 @@ const statCards = computed(() => {
     { label: 'En Proceso',      value: ticketsStore.stats.en_proceso      || 0,      icon: 'sync',                   color: 'info',     bgColor: 'rgba(49,204,236,0.12)',  borderColor: '#31CCEC' },
     { label: 'Resueltos',       value: ticketsStore.stats.resueltos       || 0,      icon: 'check_circle',           color: 'positive', bgColor: 'rgba(33,186,69,0.12)',   borderColor: '#21BA45' },
     { label: 'Urgentes (>24h)', value: ticketsStore.stats.tickets_urgentes || 0,     icon: 'warning',                color: 'negative', bgColor: 'rgba(193,0,21,0.10)',    borderColor: '#C10015' },
-    { label: 'Prom. resolución', value: promLabel,                                   icon: 'timer',                  color: 'purple',   bgColor: 'rgba(156,39,176,0.10)',   borderColor: '#9C27B0' }
+    { label: 'Prom. resolución', value: promLabel,                                   icon: 'timer',                  color: 'purple',   bgColor: 'rgba(156,39,176,0.10)',   borderColor: '#9C27B0' },
+    { label: 'Fuera de SLA',    value: ticketsStore.stats.sla_violations   || 0,     icon: 'timer_off',              color: 'orange',   bgColor: 'rgba(255,152,0,0.10)',    borderColor: '#FF9800' }
   ]
 })
 

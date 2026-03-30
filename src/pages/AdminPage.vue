@@ -183,6 +183,13 @@
             <div class="text-subtitle1 text-weight-medium q-mb-sm">Cerrar sesiones</div>
             <q-btn color="warning" text-color="dark" icon="logout" label="Cerrar sesiones de TODAS las sucursales"
               unelevated :loading="cerrandoSesiones" @click="cerrarSesionesSucursales" />
+
+            <q-separator class="q-my-lg" />
+
+            <div class="text-subtitle1 text-weight-medium q-mb-sm">Desbloquear IPs</div>
+            <div class="text-caption text-grey-6 q-mb-sm">Si alguna sucursal no puede iniciar sesión por muchos intentos fallidos, desbloquea todas las IPs.</div>
+            <q-btn color="info" icon="lock_open" label="Desbloquear todas las IPs"
+              unelevated :loading="desbloqueandoIps" @click="desbloquearIps" />
           </q-card-section>
         </q-card>
       </q-tab-panel>
@@ -228,6 +235,8 @@
             :rules="[val => !val || /.+@.+\..+/.test(val) || 'Correo inválido']">
             <template #prepend><q-icon name="email" /></template>
           </q-input>
+          <q-toggle v-model="editSucursal.email_notificaciones" label="Activar notificaciones por correo" color="primary"
+            :disable="!editSucursal.email" />
         </q-card-section>
         <q-card-actions align="right" class="q-pt-none">
           <q-btn flat label="Cancelar" v-close-popup />
@@ -291,6 +300,7 @@ const showPw = ref(false)
 const showPwAll = ref(false)
 const guardandoPw = ref(false)
 const cerrandoSesiones = ref(false)
+const desbloqueandoIps = ref(false)
 const dialogUsuario = ref(false)
 const editUsuario = ref({ nombre: '', username: '', password: '', rol: null, sucursal_id: null })
 
@@ -417,14 +427,14 @@ async function loadUsuarios() {
 }
 
 function abrirDialogSucursal(suc = null) {
-  editSucursal.value = suc ? { ...suc } : { nombre: '' }
+  editSucursal.value = suc ? { ...suc, email_notificaciones: suc.email_notificaciones !== 0 } : { nombre: '', email: '', email_notificaciones: true }
   dialogSucursal.value = true
 }
 async function guardarSucursal() {
   if (!editSucursal.value.nombre.trim()) return
   guardando.value = true
   try {
-    const payload = { nombre: editSucursal.value.nombre.trim(), email: editSucursal.value.email?.trim() || '' }
+    const payload = { nombre: editSucursal.value.nombre.trim(), email: editSucursal.value.email?.trim() || '', email_notificaciones: editSucursal.value.email_notificaciones !== false }
     if (editSucursal.value.id) {
       await api.put(`/sucursales/${editSucursal.value.id}`, payload)
     } else {
@@ -558,6 +568,18 @@ async function cerrarSesionesSucursales() {
       cerrandoSesiones.value = false
     }
   })
+}
+
+async function desbloquearIps() {
+  desbloqueandoIps.value = true
+  try {
+    const { data } = await api.post('/auth/desbloquear-ips')
+    $q.notify({ type: 'positive', message: data.message || 'IPs desbloqueadas' })
+  } catch {
+    $q.notify({ type: 'negative', message: 'Error al desbloquear IPs' })
+  } finally {
+    desbloqueandoIps.value = false
+  }
 }
 
 function getRolColor(rol) { return { admin: 'negative', encargada: 'primary', soporte: 'positive' }[rol] || 'grey' }

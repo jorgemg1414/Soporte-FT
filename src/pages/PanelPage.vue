@@ -135,11 +135,13 @@ import api from '../lib/api'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { usePolling } from '../composables/usePolling'
+import { useSLA } from '../composables/useSLA'
 
 const $q = useQuasar()
 const loading = ref(false)
 const tickets = ref([])
 const filtroActivo = ref(null)
+const { slaLabel, slaBadgeColor, slaIcon, violaSLA } = useSLA()
 
 const fechaHoy = format(new Date(), "EEEE d 'de' MMMM yyyy", { locale: es })
 
@@ -164,15 +166,11 @@ function contarEstado(estado) {
 }
 
 function esUrgente(t) {
-  return t.urgente === true
+  return t.urgente === true || violaSLA(t)
 }
 
 function tiempoTranscurrido(t) {
-  const horas = Math.floor((Date.now() - new Date(t.created_at)) / 3600000)
-  if (horas < 1) return 'hace menos de 1h'
-  if (horas < 24) return `hace ${horas}h`
-  const dias = Math.floor(horas / 24)
-  return `hace ${dias}d ${horas % 24}h`
+  return slaLabel(t)
 }
 
 function tiempoResolucion(t) {

@@ -1,5 +1,4 @@
 import { Router } from 'express'
-import { isMock, supabase } from '../lib/supabase.js'
 import db, { genId } from '../lib/database.js'
 import { authenticate } from '../middleware/auth.js'
 
@@ -8,18 +7,10 @@ const router = Router()
 router.use(authenticate)
 
 // ─── GET /api/notificaciones ──────────────────────────────────────────────────
-router.get('/', async (req, res) => {
+router.get('/', (req, res) => {
   try {
-    if (isMock) {
-      const notifs = db.prepare('SELECT * FROM notificaciones WHERE usuario_id = ? ORDER BY created_at DESC').all(req.user.sub)
-      return res.json(notifs.map(n => ({ ...n, leida: !!n.leida })))
-    }
-
-    const { data, error } = await supabase
-      .from('notificaciones').select('*').eq('usuario_id', req.user.sub).order('created_at', { ascending: false })
-    if (error) throw error
-    return res.json(data || [])
-
+    const notifs = db.prepare('SELECT * FROM notificaciones WHERE usuario_id = ? ORDER BY created_at DESC').all(req.user.sub)
+    return res.json(notifs.map(n => ({ ...n, leida: !!n.leida })))
   } catch (err) {
     console.error('Error getNotificaciones:', err)
     res.status(500).json({ error: 'Error al obtener notificaciones' })
@@ -27,18 +18,10 @@ router.get('/', async (req, res) => {
 })
 
 // ─── GET /api/notificaciones/no-leidas ────────────────────────────────────────
-router.get('/no-leidas', async (req, res) => {
+router.get('/no-leidas', (req, res) => {
   try {
-    if (isMock) {
-      const row = db.prepare('SELECT COUNT(*) as count FROM notificaciones WHERE usuario_id = ? AND leida = 0').get(req.user.sub)
-      return res.json({ count: row.count })
-    }
-
-    const { count, error } = await supabase
-      .from('notificaciones').select('*', { count: 'exact', head: true }).eq('usuario_id', req.user.sub).eq('leida', false)
-    if (error) throw error
-    return res.json({ count: count || 0 })
-
+    const row = db.prepare('SELECT COUNT(*) as count FROM notificaciones WHERE usuario_id = ? AND leida = 0').get(req.user.sub)
+    return res.json({ count: row.count })
   } catch (err) {
     console.error('Error countNoLeidas:', err)
     res.status(500).json({ error: 'Error al contar notificaciones' })
@@ -46,18 +29,10 @@ router.get('/no-leidas', async (req, res) => {
 })
 
 // ─── PUT /api/notificaciones/leer-todas ───────────────────────────────────────
-router.put('/leer-todas', async (req, res) => {
+router.put('/leer-todas', (req, res) => {
   try {
-    if (isMock) {
-      db.prepare('UPDATE notificaciones SET leida = 1 WHERE usuario_id = ? AND leida = 0').run(req.user.sub)
-      return res.json({ ok: true })
-    }
-
-    const { error } = await supabase
-      .from('notificaciones').update({ leida: true }).eq('usuario_id', req.user.sub).eq('leida', false)
-    if (error) throw error
+    db.prepare('UPDATE notificaciones SET leida = 1 WHERE usuario_id = ? AND leida = 0').run(req.user.sub)
     return res.json({ ok: true })
-
   } catch (err) {
     console.error('Error leerTodas:', err)
     res.status(500).json({ error: 'Error al marcar notificaciones' })
@@ -65,20 +40,12 @@ router.put('/leer-todas', async (req, res) => {
 })
 
 // ─── PUT /api/notificaciones/:id/leer ─────────────────────────────────────────
-router.put('/:id/leer', async (req, res) => {
+router.put('/:id/leer', (req, res) => {
   try {
-    if (isMock) {
-      const info = db.prepare('UPDATE notificaciones SET leida = 1 WHERE id = ? AND usuario_id = ?').run(req.params.id, req.user.sub)
-      if (info.changes === 0) return res.status(404).json({ error: 'Notificación no encontrada' })
-      const notif = db.prepare('SELECT * FROM notificaciones WHERE id = ?').get(req.params.id)
-      return res.json({ ...notif, leida: !!notif.leida })
-    }
-
-    const { data, error } = await supabase
-      .from('notificaciones').update({ leida: true }).eq('id', req.params.id).eq('usuario_id', req.user.sub).select().single()
-    if (error) throw error
-    return res.json(data)
-
+    const info = db.prepare('UPDATE notificaciones SET leida = 1 WHERE id = ? AND usuario_id = ?').run(req.params.id, req.user.sub)
+    if (info.changes === 0) return res.status(404).json({ error: 'Notificación no encontrada' })
+    const notif = db.prepare('SELECT * FROM notificaciones WHERE id = ?').get(req.params.id)
+    return res.json({ ...notif, leida: !!notif.leida })
   } catch (err) {
     console.error('Error marcarLeida:', err)
     res.status(500).json({ error: 'Error al marcar notificación' })
