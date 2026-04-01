@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3'
+import bcrypt from 'bcrypt'
 import path from 'path'
 import { fileURLToPath } from 'url'
 
@@ -131,16 +132,82 @@ db.exec(`
 // ─── Migraciones (columnas agregadas después del schema inicial) ──────────────
 try { db.prepare("ALTER TABLE sucursales ADD COLUMN email_notificaciones INTEGER DEFAULT 1").run() } catch { /* ya existe */ }
 
+// Tabla de adjuntos
+try { db.exec(`
+  CREATE TABLE IF NOT EXISTS adjuntos (
+    id          TEXT PRIMARY KEY,
+    ticket_id   TEXT NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+    comentario_id TEXT,
+    usuario_id  TEXT NOT NULL,
+    filename    TEXT NOT NULL,
+    original_name TEXT NOT NULL,
+    mimetype    TEXT NOT NULL,
+    size        INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_adjuntos_ticket ON adjuntos(ticket_id);
+`) } catch { /* ya existe */ }
+
+// Índice FTS5 para búsqueda full-text
+try {
+  // Recrear FTS si existe con definición vieja
+  const hasFts = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='tickets_fts'").get()
+  if (hasFts) {
+    // Limpiar y recrear
+    db.exec('DROP TABLE IF EXISTS tickets_fts')
+    db.exec('DROP TRIGGER IF EXISTS tickets_ai')
+    db.exec('DROP TRIGGER IF EXISTS tickets_au')
+    db.exec('DROP TRIGGER IF EXISTS tickets_ad')
+  }
+
+  db.exec(`
+    CREATE VIRTUAL TABLE tickets_fts USING fts5(
+      ticket_id,
+      titulo,
+      descripcion,
+      detalle_falla,
+      folio,
+      tokenize='unicode61 remove_diacritics 2'
+    );
+
+    -- Trigger: insert
+    CREATE TRIGGER tickets_ai AFTER INSERT ON tickets BEGIN
+      INSERT INTO tickets_fts(ticket_id, titulo, descripcion, detalle_falla, folio)
+      VALUES (new.id, new.titulo, new.descripcion, new.detalle_falla, new.folio);
+    END;
+
+    -- Trigger: update
+    CREATE TRIGGER tickets_au AFTER UPDATE ON tickets BEGIN
+      INSERT INTO tickets_fts(ticket_id, titulo, descripcion, detalle_falla, folio)
+      VALUES (old.id, old.titulo, old.descripcion, old.detalle_falla, old.folio);
+      DELETE FROM tickets_fts WHERE ticket_id = old.id;
+      INSERT INTO tickets_fts(ticket_id, titulo, descripcion, detalle_falla, folio)
+      VALUES (new.id, new.titulo, new.descripcion, new.detalle_falla, new.folio);
+    END;
+
+    -- Trigger: delete
+    CREATE TRIGGER tickets_ad AFTER DELETE ON tickets BEGIN
+      DELETE FROM tickets_fts WHERE ticket_id = old.id;
+    END;
+  `)
+
+  // Poblar con datos existentes
+  db.exec(`INSERT INTO tickets_fts(ticket_id, titulo, descripcion, detalle_falla, folio)
+           SELECT id, titulo, descripcion, detalle_falla, folio FROM tickets`)
+} catch (e) {
+  console.error('[DB] FTS setup error:', e.message)
+}
+
 // ─── Seed (solo si la tabla sucursales está vacía) ────────────────────────────
 const count = db.prepare('SELECT COUNT(*) as n FROM sucursales').get()
 
 if (count.n === 0) {
   console.log('[DB] Base de datos vacía, insertando datos iniciales...')
 
-  const PS  = process.env.MOCK_PASSWORD_SUCURSALES || '3787821528'
-  const PA  = process.env.MOCK_PASSWORD_ADMIN      || 'admin123'
-  const PSP = process.env.MOCK_PASSWORD_SOPORTE    || 'sop123'
-  const PU  = process.env.MOCK_PASSWORD_USUARIOS   || '123456'
+  const PS  = bcrypt.hashSync(process.env.MOCK_PASSWORD_SUCURSALES || '3787821528', 10)
+  const PA  = bcrypt.hashSync(process.env.MOCK_PASSWORD_ADMIN      || 'admin123', 10)
+  const PSP = bcrypt.hashSync(process.env.MOCK_PASSWORD_SOPORTE    || 'sop123', 10)
+  const PU  = bcrypt.hashSync(process.env.MOCK_PASSWORD_USUARIOS   || '123456', 10)
 
   const insertSuc = db.prepare('INSERT INTO sucursales (id, nombre, password, email, created_at) VALUES (?,?,?,?,?)')
   const sucursales = [

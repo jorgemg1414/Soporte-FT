@@ -15,6 +15,55 @@
       <span class="live-dot q-mr-sm" />
     </div>
 
+    <!-- Estadísticas -->
+    <div class="row q-col-gutter-sm q-mb-md">
+      <div class="col-6 col-sm-3" v-for="col in columnas" :key="col.estado">
+        <q-card bordered class="stat-card" :style="`border-top: 3px solid var(--col-${col.estado})`">
+          <q-card-section class="q-pa-sm">
+            <div class="row items-center no-wrap">
+              <div class="stat-icon-wrap q-mr-sm" :style="`background: var(--col-${col.estado}-bg)`">
+                <q-icon :name="col.icon" :color="col.color" size="20px" />
+              </div>
+              <div>
+                <div class="text-h5 text-weight-bold">{{ colTickets(col.estado).length }}</div>
+                <div class="text-caption text-grey-6">{{ col.label }}</div>
+              </div>
+            </div>
+            <!-- Barra de progreso -->
+            <q-linear-progress
+              class="q-mt-sm"
+              :value="ticketsFiltrados.length ? colTickets(col.estado).length / ticketsFiltrados.length : 0"
+              :color="col.color"
+              rounded size="6px"
+            />
+          </q-card-section>
+        </q-card>
+      </div>
+
+      <!-- Card urgentes -->
+      <div class="col-6 col-sm-3">
+        <q-card bordered class="stat-card" style="border-top: 3px solid #C10015">
+          <q-card-section class="q-pa-sm">
+            <div class="row items-center no-wrap">
+              <div class="stat-icon-wrap q-mr-sm" style="background: rgba(193,0,21,0.10)">
+                <q-icon name="warning" color="negative" size="20px" />
+              </div>
+              <div>
+                <div class="text-h5 text-weight-bold">{{ urgentesCount }}</div>
+                <div class="text-caption text-grey-6">Urgentes</div>
+              </div>
+            </div>
+            <q-linear-progress
+              class="q-mt-sm"
+              :value="ticketsFiltrados.length ? urgentesCount / ticketsFiltrados.length : 0"
+              color="negative"
+              rounded size="6px"
+            />
+          </q-card-section>
+        </q-card>
+      </div>
+    </div>
+
     <!-- Filtros -->
     <q-card bordered class="q-mb-md">
       <q-card-section class="q-pa-sm">
@@ -101,11 +150,13 @@ const filtroSuc = ref(null)
 const soloUrgentes = ref(false)
 
 const columnas = [
-  { estado: 'abierto',    label: 'Abierto',     color: 'warning' },
-  { estado: 'en_proceso', label: 'En Proceso',  color: 'info' },
-  { estado: 'resuelto',   label: 'Resuelto',    color: 'positive' },
-  { estado: 'cerrado',    label: 'Cerrado',     color: 'grey-6' }
+  { estado: 'abierto',    label: 'Abierto',    color: 'warning',  icon: 'radio_button_unchecked' },
+  { estado: 'en_proceso', label: 'En Proceso', color: 'info',     icon: 'sync' },
+  { estado: 'resuelto',   label: 'Resuelto',   color: 'positive', icon: 'check_circle' },
+  { estado: 'cerrado',    label: 'Cerrado',    color: 'grey-6',   icon: 'lock' }
 ]
+
+const urgentesCount = computed(() => ticketsFiltrados.value.filter(t => t.urgente).length)
 
 const categoriaOptions = [
   { label: 'Cancelación',  value: 'cancelacion_documento' },
@@ -164,10 +215,25 @@ async function onDrop(event, nuevoEstado) {
 </script>
 
 <style scoped>
-.welcome-banner {
-  background: linear-gradient(135deg, #1565C0 0%, #1976D2 60%, #42A5F5 100%);
-  border-radius: 16px;
-  box-shadow: 0 4px 20px rgba(25, 118, 210, 0.3);
+:root {
+  --col-abierto: #F2C037;    --col-abierto-bg: rgba(242,192,55,0.12);
+  --col-en_proceso: #31CCEC; --col-en_proceso-bg: rgba(49,204,236,0.12);
+  --col-resuelto: #21BA45;   --col-resuelto-bg: rgba(33,186,69,0.12);
+  --col-cerrado: #9E9E9E;    --col-cerrado-bg: rgba(158,158,158,0.12);
+}
+.stat-card {
+  border-radius: 10px !important;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(0,0,0,0.10) !important;
+}
+.stat-icon-wrap {
+  width: 40px; height: 40px;
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
 }
 .kanban-board { overflow-x: auto; }
 .kanban-col {

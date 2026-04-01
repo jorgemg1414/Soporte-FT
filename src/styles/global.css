@@ -1,0 +1,5 @@
+.welcome-banner {
+  background: linear-gradient(135deg, #1565C0 0%, #1976D2 60%, #42A5F5 100%);
+  border-radius: 16px;
+  box-shadow: 0 4px 20px rgba(25, 118, 210, 0.3);
+}

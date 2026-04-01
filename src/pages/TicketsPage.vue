@@ -1,12 +1,11 @@
 <template>
   <q-page class="q-pa-md">
-    <div class="welcome-banner row items-center q-pa-lg q-mb-lg">
-      <div>
-        <div class="text-h5 text-white text-weight-bold">Mis Reportes</div>
-        <div class="text-blue-2 text-caption q-mt-xs">Consulta y da seguimiento a tus reportes</div>
+    <div class="welcome-banner row items-center q-px-md q-py-sm q-mb-md">
+      <div class="text-subtitle1 text-white text-weight-bold">
+        <q-icon name="confirmation_number" class="q-mr-xs" />Reportes
       </div>
       <q-space />
-      <div class="row items-center q-gutter-sm">
+      <div class="row items-center q-gutter-xs">
         <div class="row items-center q-gutter-xs">
           <span class="live-dot" />
           <span class="text-white text-caption">{{ secondsAgo < 5 ? 'Actualizado' : `hace ${secondsAgo}s` }}</span>
@@ -27,6 +26,7 @@
           v-if="authStore.profile?.rol !== 'soporte'"
           color="white" text-color="primary" icon="add" label="Nuevo Reporte"
           unelevated to="/tickets/nuevo" style="border-radius: 10px"
+          size="sm"
         />
       </div>
     </div>
@@ -43,8 +43,12 @@
         <div class="row q-col-gutter-sm">
           <!-- Búsqueda general -->
           <div class="col-12 col-sm-4">
-            <q-input v-model="filtros.busqueda" outlined dense label="Buscar folio, título, sucursal…" clearable>
+            <q-input v-model="filtros.busqueda" outlined dense label="Buscar folio, título, sucursal…" clearable
+              :loading="buscando" @update:model-value="onSearchInput">
               <template #prepend><q-icon name="search" /></template>
+              <template v-if="searchResults.length > 0" #append>
+                <q-badge color="primary" :label="`${searchResults.length} resultado(s)`" />
+              </template>
             </q-input>
           </div>
           <!-- Estado -->
@@ -143,6 +147,7 @@ import { es } from 'date-fns/locale'
 import * as XLSX from 'xlsx'
 import { usePolling } from '../composables/usePolling'
 import { useSLA } from '../composables/useSLA'
+import { getEstadoColor, getEstadoLabel, getCategoryIcon, getCategoryLabel, formatDate } from '../composables/useTicketHelpers'
 
 const authStore = useAuthStore()
 const ticketsStore = useTicketsStore()
@@ -155,6 +160,9 @@ const stored = localStorage.getItem(FILTROS_KEY)
 const filtros = ref(stored ? { ...filtrosDefault, ...JSON.parse(stored) } : { ...filtrosDefault })
 const sucursales = ref([])
 const tecnicos = ref([])
+const buscando = ref(false)
+const searchResults = ref([])
+let searchTimeout = null
 
 watch(filtros, v => localStorage.setItem(FILTROS_KEY, JSON.stringify(v)), { deep: true })
 
@@ -197,9 +205,13 @@ function limpiarFiltros() {
 }
 
 const ticketsFiltrados = computed(() => {
-  const b = filtros.value.busqueda?.toLowerCase().trim() || ''
-  return ticketsStore.tickets.filter(t => {
-    const matchBusqueda = !b ||
+  // Si hay resultados de búsqueda FTS, usarlos como base
+  let base = searchResults.value.length > 0 ? searchResults.value : ticketsStore.tickets
+
+  return base.filter(t => {
+    const b = filtros.value.busqueda?.toLowerCase().trim() || ''
+    // Si hay resultados FTS, solo aplicar filtros adicionales (no el texto)
+    const matchBusqueda = searchResults.value.length > 0 || !b ||
       t.folio.toLowerCase().includes(b) ||
       t.titulo.toLowerCase().includes(b) ||
       (t.sucursales?.nombre || '').toLowerCase().includes(b) ||
@@ -228,6 +240,22 @@ onMounted(async () => {
 })
 
 const { secondsAgo } = usePolling(() => ticketsStore.fetchTickets(), 30000)
+
+// Búsqueda full-text con debounce
+function onSearchInput(val) {
+  clearTimeout(searchTimeout)
+  searchResults.value = []
+  if (!val || val.trim().length < 3) return
+
+  searchTimeout = setTimeout(async () => {
+    buscando.value = true
+    try {
+      const { data } = await api.get(`/tickets/search?q=${encodeURIComponent(val.trim())}`)
+      searchResults.value = data || []
+    } catch { /* silencioso */ }
+    finally { buscando.value = false }
+  }, 400)
+}
 
 function exportarExcel() {
   const filas = ticketsFiltrados.value.map(t => ({
@@ -284,29 +312,10 @@ function calcTiempoResolucion(t) {
   return `${Math.floor(horas / 24)}d`
 }
 
-function getEstadoColor(e) {
-  return { abierto: 'warning', en_proceso: 'info', resuelto: 'positive', cerrado: 'grey-6' }[e] || 'grey'
-}
-function getEstadoLabel(e) {
-  return { abierto: 'Abierto', en_proceso: 'En Proceso', resuelto: 'Resuelto', cerrado: 'Cerrado' }[e] || e
-}
-function getCategoryIcon(cat) {
-  return { cancelacion_documento: 'cancel', falla_pvwin: 'computer', falla_computadora: 'desktop_windows', otro: 'help_outline' }[cat] || 'help_outline'
-}
-function getCategoryLabel(cat) {
-  return { cancelacion_documento: 'Cancelación', falla_pvwin: 'Falla PVWIN', falla_computadora: 'Falla Equipo', otro: 'Otro' }[cat] || cat
-}
-function formatDate(dateStr) {
-  return format(new Date(dateStr), 'dd/MM/yyyy HH:mm', { locale: es })
-}
+
 </script>
 
 <style scoped>
-.welcome-banner {
-  background: linear-gradient(135deg, #1565C0 0%, #1976D2 60%, #42A5F5 100%);
-  border-radius: 16px;
-  box-shadow: 0 4px 20px rgba(25, 118, 210, 0.3);
-}
 .clickable-rows :deep(tbody tr) { cursor: pointer; transition: background 0.15s; }
 .clickable-rows :deep(tbody tr:hover) { background: rgba(25, 118, 210, 0.06) !important; }
 .live-dot {

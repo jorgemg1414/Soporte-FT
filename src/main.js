@@ -8,6 +8,7 @@ import App from './App.vue'
 
 import '@quasar/extras/material-icons/material-icons.css'
 import 'quasar/src/css/index.sass'
+import './styles/global.css'
 
 const app = createApp(App)
 

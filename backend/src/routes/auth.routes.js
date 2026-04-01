@@ -1,10 +1,21 @@
 import { Router } from 'express'
+import bcrypt from 'bcrypt'
 import jwt from 'jsonwebtoken'
 import db, { invalidateSucursalSessions } from '../lib/database.js'
 import { authenticate, requireRole } from '../middleware/auth.js'
 import { checkIPBlock, registerFailedAttempt, registerSuccessfulLogin, logSecurity, clearAllBlocks } from '../middleware/security.js'
 
 const router = Router()
+
+// Helper: setear cookie httpOnly con el token
+function setTokenCookie(res, token) {
+  res.cookie('token', token, {
+    httpOnly: true,
+    secure: false, // true en producción con HTTPS
+    sameSite: 'lax',
+    maxAge: 8 * 60 * 60 * 1000 // 8 horas
+  })
+}
 
 // POST /api/auth/login
 router.post('/login', checkIPBlock, (req, res) => {
@@ -20,7 +31,7 @@ router.post('/login', checkIPBlock, (req, res) => {
       SELECT * FROM users_auth WHERE LOWER(REPLACE(email, '@ft.com', '')) = ?
     `).get(normalize(email))
 
-    if (!authUser || authUser.password !== password) {
+    if (!authUser || !bcrypt.compareSync(password, authUser.password)) {
       registerFailedAttempt(req)
       return res.status(401).json({ error: 'Credenciales incorrectas' })
     }
@@ -47,10 +58,10 @@ router.post('/login', checkIPBlock, (req, res) => {
       { expiresIn: process.env.JWT_EXPIRES_SISTEMAS }
     )
 
+    setTokenCookie(res, token)
     registerSuccessfulLogin(req, { id: userId, nombre, rol })
 
     return res.json({
-      token,
       user: { id: userId, nombre, rol, sucursal_id, sucursal_nombre }
     })
 
@@ -69,7 +80,7 @@ router.post('/sucursal-login', checkIPBlock, (req, res) => {
   try {
     const sucursal = db.prepare('SELECT * FROM sucursales WHERE id = ?').get(sucursal_id)
     if (!sucursal) return res.status(404).json({ error: 'Sucursal no encontrada' })
-    if (sucursal.password !== password) {
+    if (!bcrypt.compareSync(password, sucursal.password)) {
       registerFailedAttempt(req)
       return res.status(401).json({ error: 'Contraseña incorrecta' })
     }
@@ -84,13 +95,24 @@ router.post('/sucursal-login', checkIPBlock, (req, res) => {
       { expiresIn: process.env.JWT_EXPIRES_SUCURSAL }
     )
 
+    setTokenCookie(res, token)
     registerSuccessfulLogin(req, { id: userId, nombre: sucursal_nombre, rol: 'encargada' })
 
-    return res.json({ token, user: { id: userId, nombre: sucursal_nombre, rol: 'encargada', sucursal_id, sucursal_nombre } })
+    return res.json({ user: { id: userId, nombre: sucursal_nombre, rol: 'encargada', sucursal_id, sucursal_nombre } })
   } catch (err) {
     console.error('Error sucursal-login:', err)
     return res.status(500).json({ error: 'Error interno' })
   }
+})
+
+// POST /api/auth/logout
+router.post('/logout', (req, res) => {
+  res.clearCookie('token', {
+    httpOnly: true,
+    secure: false,
+    sameSite: 'lax'
+  })
+  return res.json({ ok: true })
 })
 
 // POST /api/auth/cerrar-sesiones-sucursales  (solo admin)

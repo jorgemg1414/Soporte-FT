@@ -1,11 +1,12 @@
 import { Router } from 'express'
+import bcrypt from 'bcrypt'
 import db, { genId } from '../lib/database.js'
 import { authenticate, requireRole } from '../middleware/auth.js'
 
 const router = Router()
 
 // ─── GET /api/sucursales (público — id, nombre, email, email_notificaciones) ─
-router.get('/', (req, res) => {
+router.get('/', authenticate, (req, res) => {
   try {
     const sucursales = db.prepare('SELECT id, nombre, email, email_notificaciones FROM sucursales ORDER BY nombre').all()
     return res.json(sucursales)
@@ -22,8 +23,9 @@ router.post('/', authenticate, requireRole('admin'), (req, res) => {
     if (!nombre?.trim()) return res.status(400).json({ error: 'El nombre es requerido' })
 
     const id = genId()
+    const hashedPassword = bcrypt.hashSync(process.env.MOCK_PASSWORD_SUCURSALES, 10)
     db.prepare('INSERT INTO sucursales (id, nombre, password, email, created_at) VALUES (?,?,?,?,?)')
-      .run(id, nombre.trim().toUpperCase(), process.env.MOCK_PASSWORD_SUCURSALES, email?.trim() || '', new Date().toISOString())
+      .run(id, nombre.trim().toUpperCase(), hashedPassword, email?.trim() || '', new Date().toISOString())
     const suc = db.prepare('SELECT id, nombre, email, email_notificaciones, created_at FROM sucursales WHERE id = ?').get(id)
     return res.status(201).json(suc)
   } catch (err) {
@@ -38,7 +40,8 @@ router.put('/password-todas', authenticate, requireRole('admin'), (req, res) => 
     const { password } = req.body
     if (!password || password.length < 4) return res.status(400).json({ error: 'La contraseña debe tener al menos 4 caracteres' })
 
-    const info = db.prepare('UPDATE sucursales SET password = ?').run(password)
+    const hashedPassword = bcrypt.hashSync(password, 10)
+    const info = db.prepare('UPDATE sucursales SET password = ?').run(hashedPassword)
     return res.json({ ok: true, message: `Contraseña actualizada en ${info.changes} sucursales` })
   } catch (err) {
     console.error('Error cambiarPasswordTodas:', err)
@@ -75,7 +78,7 @@ router.put('/:id/password', authenticate, requireRole('admin'), (req, res) => {
 
     const exists = db.prepare('SELECT id FROM sucursales WHERE id = ?').get(id)
     if (!exists) return res.status(404).json({ error: 'Sucursal no encontrada' })
-    db.prepare('UPDATE sucursales SET password = ? WHERE id = ?').run(password, id)
+    db.prepare('UPDATE sucursales SET password = ? WHERE id = ?').run(bcrypt.hashSync(password, 10), id)
     return res.json({ ok: true, message: 'Contraseña actualizada' })
   } catch (err) {
     console.error('Error cambiarPassword:', err)
@@ -89,6 +92,13 @@ router.delete('/:id', authenticate, requireRole('admin'), (req, res) => {
     const { id } = req.params
     const exists = db.prepare('SELECT id FROM sucursales WHERE id = ?').get(id)
     if (!exists) return res.status(404).json({ error: 'Sucursal no encontrada' })
+
+    // Verificar que no tenga tickets asociados
+    const ticketCount = db.prepare('SELECT COUNT(*) as n FROM tickets WHERE sucursal_id = ?').get(id)
+    if (ticketCount.n > 0) {
+      return res.status(409).json({ error: `No se puede eliminar: tiene ${ticketCount.n} ticket(s) asociado(s)` })
+    }
+
     db.prepare('DELETE FROM sucursales WHERE id = ?').run(id)
     return res.json({ ok: true })
   } catch (err) {

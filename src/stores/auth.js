@@ -10,28 +10,21 @@ export const useAuthStore = defineStore('auth', {
 
   actions: {
     async init() {
-      const token = localStorage.getItem('auth_token')
-
-      if (token) {
-        try {
-          const { data } = await api.get('/auth/me')
-          // El backend devuelve { id, nombre, rol, sucursal_id, sucursal_nombre }
-          this.user = { id: data.id, email: null }
-          this.profile = {
-            id:              data.id,
-            nombre:          data.nombre,
-            rol:             data.rol,
-            sucursal_id:     data.sucursal_id,
-            sucursales:      data.sucursal_nombre
-              ? { nombre: data.sucursal_nombre }
-              : null
-          }
-        } catch {
-          // Token inválido o expirado: limpiar
-          localStorage.removeItem('auth_token')
-          this.user    = null
-          this.profile = null
+      try {
+        const { data } = await api.get('/auth/me')
+        this.user = { id: data.id }
+        this.profile = {
+          id:              data.id,
+          nombre:          data.nombre,
+          rol:             data.rol,
+          sucursal_id:     data.sucursal_id,
+          sucursales:      data.sucursal_nombre
+            ? { nombre: data.sucursal_nombre }
+            : null
         }
+      } catch {
+        this.user    = null
+        this.profile = null
       }
 
       this.initialized = true
@@ -39,10 +32,8 @@ export const useAuthStore = defineStore('auth', {
 
     async login(email, password) {
       const { data } = await api.post('/auth/login', { email, password })
-      // Guardar el JWT en localStorage
-      localStorage.setItem('auth_token', data.token)
 
-      this.user = { id: data.user.id, email }
+      this.user = { id: data.user.id }
       this.profile = {
         id:          data.user.id,
         nombre:      data.user.nombre,
@@ -56,8 +47,8 @@ export const useAuthStore = defineStore('auth', {
       return data
     },
 
-    logout() {
-      localStorage.removeItem('auth_token')
+    async logout() {
+      try { await api.post('/auth/logout') } catch { /* ignorar */ }
       this.user    = null
       this.profile = null
     }

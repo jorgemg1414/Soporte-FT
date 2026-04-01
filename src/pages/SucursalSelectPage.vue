@@ -210,7 +210,6 @@ async function confirmarPassword() {
   try {
     const { data } = await api.post('/auth/sucursal-login', { sucursal_id: suc.id, password: passwordInput.value })
     dialogPassword.value = false
-    localStorage.setItem('auth_token', data.token)
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ id: suc.id, nombre: suc.nombre }))
 
     authStore.user    = { id: data.user.id, email: null }

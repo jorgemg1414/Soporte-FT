@@ -23,7 +23,7 @@ const routes = [
           const authStore = useAuthStore()
           const rol = authStore.profile?.rol
           if (rol === 'encargada') return '/sucursal'
-          return '/panel'
+          return '/tickets'
         }
       },
       {
@@ -32,18 +32,8 @@ const routes = [
         meta: { roles: ['encargada'] }
       },
       {
-        path: 'panel',
-        component: () => import('../pages/PanelPage.vue'),
-        meta: { roles: ['admin', 'soporte'] }
-      },
-      {
         path: 'dashboard',
         component: () => import('../pages/DashboardPage.vue'),
-        meta: { roles: ['admin', 'soporte'] }
-      },
-      {
-        path: 'kanban',
-        component: () => import('../pages/KanbanPage.vue'),
         meta: { roles: ['admin', 'soporte'] }
       },
       {
@@ -64,6 +54,11 @@ const routes = [
         component: () => import('../pages/SugerenciasPage.vue')
       },
       {
+        path: 'kanban',
+        component: () => import('../pages/KanbanPage.vue'),
+        meta: { roles: ['admin', 'soporte'] }
+      },
+      {
         path: 'admin',
         component: () => import('../pages/AdminPage.vue'),
         meta: { roles: ['admin'] }
@@ -81,7 +76,8 @@ const router = createRouter({
 router.beforeEach(async (to) => {
   const authStore = useAuthStore()
 
-  if (!authStore.initialized) {
+  // Solo inicializar auth si la ruta no es pública
+  if (!to.meta.public && !authStore.initialized) {
     try { await authStore.init() } catch { authStore.initialized = true }
   }
 
@@ -89,7 +85,7 @@ router.beforeEach(async (to) => {
     // Si ya está autenticado, redirigir a su página
     if (authStore.user) {
       const rol = authStore.profile?.rol
-      return rol === 'encargada' ? '/sucursal' : '/panel'
+      return rol === 'encargada' ? '/sucursal' : '/tickets'
     }
     return true
   }
@@ -99,7 +95,7 @@ router.beforeEach(async (to) => {
 
   if (to.meta.roles && !to.meta.roles.includes(authStore.profile?.rol)) {
     const rol = authStore.profile?.rol
-    return rol === 'encargada' ? '/sucursal' : '/panel'
+    return rol === 'encargada' ? '/sucursal' : '/tickets'
   }
 
   return true

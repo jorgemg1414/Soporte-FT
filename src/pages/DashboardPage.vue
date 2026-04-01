@@ -172,6 +172,7 @@ import { useTicketsStore } from '../stores/tickets'
 import { useQuasar } from 'quasar'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
+import { getCategoryIcon, getCategoryLabel, getCategoryColor, getCategoryBg, getEstadoColor, getEstadoLabel, formatDate } from '../composables/useTicketHelpers'
 
 const authStore    = useAuthStore()
 const ticketsStore = useTicketsStore()
@@ -314,22 +315,10 @@ const chartTecnico = computed(() => {
   }
 })
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-function getCategoryIcon(cat)  { return { cancelacion_documento: 'cancel', falla_pvwin: 'computer', falla_computadora: 'desktop_windows', otro: 'help_outline' }[cat] || 'help_outline' }
-function getCategoryLabel(cat) { return { cancelacion_documento: 'Cancelación', falla_pvwin: 'Falla PVWIN', falla_computadora: 'Falla Equipo', otro: 'Otro' }[cat] || cat }
-function getCategoryColor(cat) { return { cancelacion_documento: 'negative', falla_pvwin: 'primary', falla_computadora: 'warning', otro: 'grey' }[cat] || 'grey' }
-function getCategoryBg(cat)    { return { cancelacion_documento: 'rgba(193,0,21,0.08)', falla_pvwin: 'rgba(25,118,210,0.1)', falla_computadora: 'rgba(242,192,55,0.1)', otro: 'rgba(0,0,0,0.05)' }[cat] || 'rgba(0,0,0,0.05)' }
-function getEstadoColor(e)     { return { abierto: 'warning', en_proceso: 'info', resuelto: 'positive', cerrado: 'grey-6' }[e] || 'grey' }
-function getEstadoLabel(e)     { return { abierto: 'Abierto', en_proceso: 'En Proceso', resuelto: 'Resuelto', cerrado: 'Cerrado' }[e] || e }
-function formatDate(dateStr)   { return format(new Date(dateStr), "dd MMM yyyy", { locale: es }) }
+
 </script>
 
 <style scoped>
-.welcome-banner {
-  background: linear-gradient(135deg, #1565C0 0%, #1976D2 60%, #42A5F5 100%);
-  border-radius: 16px;
-  box-shadow: 0 4px 20px rgba(25, 118, 210, 0.3);
-}
 .stat-card {
   border-radius: 12px !important;
   transition: transform 0.2s, box-shadow 0.2s;

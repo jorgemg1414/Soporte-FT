@@ -30,7 +30,7 @@ router.post('/', (req, res) => {
   try {
     const { contenido } = req.body
     if (!contenido?.trim()) return res.status(400).json({ error: 'El contenido es requerido' })
-    if (contenido.length > 2000) return res.status(400).json({ error: 'Máximo 2000 caracteres' })
+    if (contenido.length > 300) return res.status(400).json({ error: 'Máximo 300 caracteres' })
 
     const id = genId()
     const now = new Date().toISOString()

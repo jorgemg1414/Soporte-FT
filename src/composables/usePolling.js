@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 /**
  * Ejecuta `fetchFn` cada `interval` ms.
  * Se pausa automáticamente cuando la pestaña está oculta y reanuda al volver.
+ * Se detiene si la ruta actual es pública (login/sucursal-select).
  * Devuelve `lastUpdated` (Date) y `secondsAgo` (número reactivo).
  */
 export function usePolling(fetchFn, interval = 30000) {
@@ -13,6 +14,11 @@ export function usePolling(fetchFn, interval = 30000) {
   let secondTimer = null
 
   async function ejecutar() {
+    // No hacer fetch si estamos en una página pública (sin auth)
+    if (window.location.pathname === '/login' || window.location.pathname === '/sucursal-select') {
+      detenerPoll()
+      return
+    }
     await fetchFn()
     lastUpdated.value = new Date()
     secondsAgo.value  = 0
@@ -31,7 +37,7 @@ export function usePolling(fetchFn, interval = 30000) {
   function onVisibilityChange() {
     if (document.hidden) {
       detenerPoll()
-    } else {
+    } else if (window.location.pathname !== '/login' && window.location.pathname !== '/sucursal-select') {
       ejecutar()     // refresca inmediatamente al volver a la pestaña
       iniciarPoll()
     }

@@ -1,10 +1,10 @@
 <template>
   <q-page class="q-pa-md" v-if="ticket">
-    <div class="welcome-banner row items-center q-pa-lg q-mb-lg">
+    <div class="welcome-banner row items-center q-px-md q-py-sm q-mb-md">
       <q-btn flat round icon="arrow_back" color="white" @click="$router.back()" />
       <div class="q-ml-sm col">
-        <div class="text-h5 text-white text-weight-bold">{{ ticket.folio }}</div>
-        <div class="text-blue-2 text-caption q-mt-xs">
+        <div class="text-subtitle1 text-white text-weight-bold">{{ ticket.folio }}</div>
+        <div class="text-blue-2 text-caption">
           {{ ticket.sucursales?.nombre }} · {{ ticket.profiles?.nombre }} · {{ formatDate(ticket.created_at) }}
         </div>
       </div>
@@ -28,7 +28,6 @@
             <div class="row q-gutter-xs q-mb-sm">
               <q-btn v-for="accion in accionesEstado" :key="accion.value"
                 :label="accion.label" :color="accion.color" :icon="accion.icon"
-                :disable="ticket.estado === accion.value"
                 unelevated class="col"
                 :loading="cambiandoEstado" @click="cambiarEstado(accion.value)"
                 size="sm" />
@@ -49,50 +48,6 @@
               @update:model-value="asignarTecnico">
               <template #prepend><q-icon name="engineering" /></template>
             </q-select>
-          </q-card-section>
-        </q-card>
-
-        <q-card bordered class="q-mb-md">
-          <q-card-section>
-            <div class="text-h6 q-mb-sm">Detalles</div>
-            <q-list dense>
-              <q-item>
-                <q-item-section>
-                  <q-item-label caption class="text-grey-6">Folio</q-item-label>
-                  <q-item-label class="text-primary text-weight-bold">{{ ticket.folio }}</q-item-label>
-                </q-item-section>
-              </q-item>
-              <q-item>
-                <q-item-section>
-                  <q-item-label caption class="text-grey-6">Sucursal</q-item-label>
-                  <q-item-label>{{ ticket.sucursales?.nombre }}</q-item-label>
-                </q-item-section>
-              </q-item>
-              <q-item>
-                <q-item-section>
-                  <q-item-label caption class="text-grey-6">Reportado por</q-item-label>
-                  <q-item-label>{{ ticket.profiles?.nombre }}</q-item-label>
-                </q-item-section>
-              </q-item>
-              <q-item v-if="ticket.resuelto_por">
-                <q-item-section>
-                  <q-item-label caption class="text-positive">Resuelto por</q-item-label>
-                  <q-item-label class="text-positive text-weight-bold">{{ ticket.resuelto_por?.nombre }}</q-item-label>
-                </q-item-section>
-              </q-item>
-              <q-item>
-                <q-item-section>
-                  <q-item-label caption class="text-grey-6">Creado</q-item-label>
-                  <q-item-label>{{ formatDate(ticket.created_at) }}</q-item-label>
-                </q-item-section>
-              </q-item>
-              <q-item>
-                <q-item-section>
-                  <q-item-label caption class="text-grey-6">Actualizado</q-item-label>
-                  <q-item-label>{{ formatDate(ticket.updated_at) }}</q-item-label>
-                </q-item-section>
-              </q-item>
-            </q-list>
           </q-card-section>
         </q-card>
 
@@ -147,18 +102,6 @@
                   <div class="text-positive text-body1 text-weight-bold">{{ ticket.folio_correcto }}</div>
                 </div>
               </div>
-              <div v-if="ticket.foto_cancelar || ticket.foto_correcto" class="row q-col-gutter-md q-mb-md">
-                <div class="col-12 col-sm-6" v-if="ticket.foto_cancelar">
-                  <div class="text-caption text-grey-6 q-mb-xs">Foto documento a cancelar</div>
-                  <q-img :src="ticket.foto_cancelar" style="border-radius: 10px; max-height: 260px" fit="contain"
-                    class="bg-grey-2 cursor-pointer" @click="fotoAmpliada = ticket.foto_cancelar; dialogFoto = true" />
-                </div>
-                <div class="col-12 col-sm-6" v-if="ticket.foto_correcto">
-                  <div class="text-caption text-grey-6 q-mb-xs">Foto documento correcto</div>
-                  <q-img :src="ticket.foto_correcto" style="border-radius: 10px; max-height: 260px" fit="contain"
-                    class="bg-grey-2 cursor-pointer" @click="fotoAmpliada = ticket.foto_correcto; dialogFoto = true" />
-                </div>
-              </div>
             </template>
 
             <template v-if="ticket.categoria === 'falla_pvwin' || ticket.categoria === 'falla_computadora'">
@@ -191,16 +134,6 @@
           </q-card-section>
         </q-card>
 
-        <!-- Dialog foto ampliada -->
-        <q-dialog v-model="dialogFoto" @hide="fotoAmpliada = null">
-          <q-card style="max-width: 95vw; max-height: 90vh; background: black">
-            <q-img :src="fotoAmpliada" fit="contain" style="max-height: 85vh" />
-            <q-card-actions align="center">
-              <q-btn flat color="white" icon="close" label="Cerrar" v-close-popup />
-            </q-card-actions>
-          </q-card>
-        </q-dialog>
-
         <!-- Notas Internas (solo soporte/admin) -->
         <q-card bordered class="q-mb-md"
           v-if="authStore.profile?.rol === 'soporte' || authStore.profile?.rol === 'admin'">
@@ -230,7 +163,7 @@
           </q-list>
           <q-separator />
           <q-card-section>
-            <q-input v-model="nuevaNota" outlined label="Agregar nota interna..." type="textarea" rows="2" dense>
+            <q-input v-model="nuevaNota" outlined label="Agregar nota interna..." type="textarea" rows="2" dense maxlength="300" counter>
               <template #append>
                 <q-btn flat round icon="send" color="orange"
                   :disable="!nuevaNota.trim()" :loading="enviandoNota" @click="enviarNota" />
@@ -267,7 +200,7 @@
           </q-list>
           <q-separator />
           <q-card-section>
-            <q-input v-model="nuevoComentario" outlined label="Escribir comentario..." type="textarea" rows="2">
+            <q-input v-model="nuevoComentario" outlined label="Escribir comentario..." type="textarea" rows="2" maxlength="300" counter>
               <template #append>
                 <q-btn flat round icon="send" color="primary"
                   :disable="!nuevoComentario.trim()" :loading="enviando" @click="enviarComentario" />
@@ -286,14 +219,13 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { useTicketsStore } from '../stores/tickets'
 import api from '../lib/api'
 import { useQuasar } from 'quasar'
-import { format } from 'date-fns'
-import { es } from 'date-fns/locale'
+import { getEstadoColor, getEstadoLabel, getCategoryIcon, getCategoryLabel, getTipoDocLabel, getRolColor, getRolLabel, formatDate } from '../composables/useTicketHelpers'
 
 const route = useRoute()
 const authStore = useAuthStore()
@@ -312,15 +244,25 @@ const enviando = ref(false)
 const enviandoNota = ref(false)
 const cambiandoEstado = ref(false)
 const marcandoUrgente = ref(false)
-const fotoAmpliada = ref(null)
-const dialogFoto = ref(false)
 
-const accionesEstado = [
-  { label: 'Marcar En Proceso', value: 'en_proceso', color: 'info',    icon: 'sync' },
-  { label: 'Marcar Resuelto',   value: 'resuelto',   color: 'positive',icon: 'check_circle' },
-  { label: 'Cerrar Ticket',     value: 'cerrado',     color: 'grey-7',  icon: 'lock' },
-  { label: 'Reabrir Ticket',    value: 'abierto',     color: 'warning', icon: 'lock_open' }
+const todasAcciones = [
+  { label: 'En Proceso', value: 'en_proceso', color: 'info',     icon: 'sync' },
+  { label: 'Resuelto',   value: 'resuelto',   color: 'positive', icon: 'check_circle' },
+  { label: 'Cerrar',     value: 'cerrado',    color: 'grey-7',   icon: 'lock' },
+  { label: 'Reabrir',    value: 'abierto',    color: 'warning',  icon: 'lock_open' }
 ]
+
+const transiciones = {
+  abierto:    ['en_proceso', 'resuelto', 'cerrado'],
+  en_proceso: ['resuelto', 'cerrado', 'abierto'],
+  resuelto:   ['cerrado', 'abierto'],
+  cerrado:    ['abierto']
+}
+
+const accionesEstado = computed(() => {
+  const validas = transiciones[ticket.value?.estado] || []
+  return todasAcciones.filter(a => validas.includes(a.value))
+})
 
 onMounted(loadAll)
 
@@ -329,18 +271,22 @@ async function loadAll() {
   const esSoporte = authStore.profile?.rol === 'soporte' || authStore.profile?.rol === 'admin'
 
   const promises = [
-    api.get(`/tickets/${id}`),
-    api.get(`/tickets/${id}/comentarios`),
-    api.get(`/tickets/${id}/historial`)
+    api.get(`/tickets/${id}`).catch(e => { console.error('Error loading ticket:', e); return { data: null } }),
+    api.get(`/tickets/${id}/comentarios`).catch(() => ({ data: [] })),
+    api.get(`/tickets/${id}/historial`).catch(() => ({ data: [] }))
   ]
   if (esSoporte) {
-    promises.push(api.get(`/tickets/${id}/notas`))
-    promises.push(api.get('/usuarios/tecnicos'))
+    promises.push(api.get(`/tickets/${id}/notas`).catch(() => ({ data: [] })))
+    promises.push(api.get('/usuarios/tecnicos').catch(() => ({ data: [] })))
   }
 
   const results = await Promise.all(promises)
 
   ticket.value      = results[0].data
+  if (!ticket.value) {
+    $q.notify({ type: 'negative', message: 'No se pudo cargar el ticket' })
+    return
+  }
   comentarios.value = results[1].data || []
   historial.value   = results[2].data || []
 
@@ -405,6 +351,18 @@ async function toggleUrgente() {
 }
 
 async function cambiarEstado(nuevoEstado) {
+  const estadoLabels = { abierto: 'Abierto', en_proceso: 'En Proceso', resuelto: 'Resuelto', cerrado: 'Cerrado' }
+  const confirmado = await new Promise(resolve => {
+    $q.dialog({
+      title: 'Cambiar estado',
+      message: `¿Cambiar el estado a "${estadoLabels[nuevoEstado]}"?`,
+      cancel: { label: 'Cancelar', flat: true },
+      ok: { label: 'Confirmar', color: 'primary', unelevated: true },
+      persistent: true
+    }).onOk(() => resolve(true)).onCancel(() => resolve(false))
+  })
+  if (!confirmado) return
+
   cambiandoEstado.value = true
   try {
     await ticketsStore.actualizarEstado(route.params.id, nuevoEstado)
@@ -418,20 +376,7 @@ async function cambiarEstado(nuevoEstado) {
   }
 }
 
-function getEstadoColor(e)   { return { abierto: 'warning', en_proceso: 'info', resuelto: 'positive', cerrado: 'grey-6' }[e] || 'grey' }
-function getEstadoLabel(e)   { return { abierto: 'Abierto', en_proceso: 'En Proceso', resuelto: 'Resuelto', cerrado: 'Cerrado' }[e] || e }
-function getCategoryIcon(cat){ return { cancelacion_documento: 'cancel', falla_pvwin: 'computer', falla_computadora: 'desktop_windows', otro: 'help_outline' }[cat] || 'help_outline' }
-function getCategoryLabel(cat){ return { cancelacion_documento: 'Cancelación de Documento', falla_pvwin: 'Falla en PVWIN', falla_computadora: 'Falla en Equipo', otro: 'Otro' }[cat] || cat }
-function getTipoDocLabel(tipo){ return { factura: 'Factura', remision: 'Remisión', traspaso: 'Traspaso', compra: 'Compra', nota_credito: 'Nota de Crédito', devolucion: 'Devolución', otro: 'Otro' }[tipo] || tipo }
-function getRolColor(rol)    { return { admin: 'negative', encargada: 'primary', soporte: 'positive' }[rol] || 'grey' }
-function getRolLabel(rol)    { return { admin: 'Admin', encargada: 'Encargado/a', soporte: 'Soporte' }[rol] || rol }
-function formatDate(dateStr) { if (!dateStr) return '—'; return format(new Date(dateStr), 'dd/MM/yyyy HH:mm', { locale: es }) }
 </script>
 
 <style scoped>
-.welcome-banner {
-  background: linear-gradient(135deg, #1565C0 0%, #1976D2 60%, #42A5F5 100%);
-  border-radius: 16px;
-  box-shadow: 0 4px 20px rgba(25, 118, 210, 0.3);
-}
 </style>

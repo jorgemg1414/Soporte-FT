@@ -53,8 +53,8 @@
         <q-card-section>
           <q-input v-model="nuevaSugerencia" outlined type="textarea" rows="4"
             label="Escribe tu sugerencia, idea o recomendación..."
-            :rules="[v => !!v?.trim() || 'Requerido', v => v.length <= 2000 || 'Máximo 2000 caracteres']"
-            counter maxlength="2000" />
+            :rules="[v => !!v?.trim() || 'Requerido', v => v.length <= 300 || 'Máximo 300 caracteres']"
+            counter maxlength="300" />
         </q-card-section>
         <q-card-actions align="right">
           <q-btn flat label="Cancelar" v-close-popup />
@@ -74,7 +74,7 @@
           </div>
         </q-card-section>
         <q-card-section class="q-gutter-md">
-          <q-input v-model="respuestaTexto" outlined type="textarea" rows="3" label="Respuesta..." />
+          <q-input v-model="respuestaTexto" outlined type="textarea" rows="3" label="Respuesta..." maxlength="300" counter />
           <q-select v-model="respuestaEstado" outlined dense label="Cambiar estado"
             :options="estadosOptions" emit-value map-options />
         </q-card-section>
@@ -93,8 +93,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import api from '../lib/api'
 import { useQuasar } from 'quasar'
-import { format } from 'date-fns'
-import { es } from 'date-fns/locale'
+import { formatDate } from '../composables/useTicketHelpers'
 
 const authStore = useAuthStore()
 const $q = useQuasar()
@@ -177,16 +176,8 @@ function getEstadoLabel(e) {
 function getEstadoIcon(e) {
   return { pendiente: 'schedule', revisada: 'visibility', implementada: 'check_circle', descartada: 'cancel' }[e] || 'help'
 }
-function formatDate(d) {
-  if (!d) return ''
-  return format(new Date(d), 'dd/MM/yyyy HH:mm', { locale: es })
-}
+
 </script>
 
 <style scoped>
-.welcome-banner {
-  background: linear-gradient(135deg, #1565C0 0%, #1976D2 60%, #42A5F5 100%);
-  border-radius: 16px;
-  box-shadow: 0 4px 20px rgba(25, 118, 210, 0.3);
-}
 </style>

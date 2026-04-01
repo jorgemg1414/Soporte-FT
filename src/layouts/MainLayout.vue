@@ -122,14 +122,6 @@
           <q-item-label header class="text-grey-6 text-caption text-weight-bold" style="letter-spacing: 1px">
             MENÚ PRINCIPAL
           </q-item-label>
-          <q-item clickable v-ripple to="/panel" active-class="item-active" class="rounded-borders q-mb-xs">
-            <q-item-section avatar><q-icon name="speed" /></q-item-section>
-            <q-item-section>Panel Rápido</q-item-section>
-          </q-item>
-          <q-item clickable v-ripple to="/kanban" active-class="item-active" class="rounded-borders q-mb-xs">
-            <q-item-section avatar><q-icon name="view_kanban" /></q-item-section>
-            <q-item-section>Kanban</q-item-section>
-          </q-item>
           <q-item clickable v-ripple to="/tickets" active-class="item-active" class="rounded-borders q-mb-xs">
             <q-item-section avatar><q-icon name="confirmation_number" /></q-item-section>
             <q-item-section>Todos los Reportes</q-item-section>
@@ -137,6 +129,10 @@
           <q-item clickable v-ripple to="/dashboard" active-class="item-active" class="rounded-borders q-mb-xs">
             <q-item-section avatar><q-icon name="bar_chart" /></q-item-section>
             <q-item-section>Estadísticas</q-item-section>
+          </q-item>
+          <q-item clickable v-ripple to="/kanban" active-class="item-active" class="rounded-borders q-mb-xs">
+            <q-item-section avatar><q-icon name="view_kanban" /></q-item-section>
+            <q-item-section>Kanban</q-item-section>
           </q-item>
           <q-item clickable v-ripple to="/sugerencias" active-class="item-active" class="rounded-borders q-mb-xs">
             <q-item-section avatar><q-icon name="lightbulb" /></q-item-section>
@@ -195,8 +191,8 @@ const notifCount = ref(0)
 let notifInterval = null
 let inicializado = false
 
-const notifIconos = { asignacion: 'person_add', estado: 'sync', comentario: 'chat', info: 'info' }
-const notifColores = { asignacion: 'info', estado: 'primary', comentario: 'purple', info: 'grey-7' }
+const notifIconos = { asignacion: 'person_add', estado: 'sync', resuelto: 'check_circle', comentario: 'chat', info: 'info' }
+const notifColores = { asignacion: 'info', estado: 'primary', resuelto: 'positive', comentario: 'purple', info: 'grey-7' }
 
 async function fetchNotificaciones() {
   try {
@@ -213,13 +209,16 @@ async function fetchNotificaciones() {
       const recienLlegadas = nuevas.filter(n => !n.leida && !idsConocidos.has(n.id))
 
       recienLlegadas.forEach(n => {
+        const esResuelto = n.tipo === 'resuelto'
         $q.notify({
           message: n.mensaje,
+          caption: esResuelto ? '¡Tu reporte fue atendido!' : undefined,
           icon: notifIconos[n.tipo] || 'notifications',
           color: notifColores[n.tipo] || 'primary',
           position: 'top-right',
-          timeout: 6000,
+          timeout: esResuelto ? 10000 : 6000,
           progress: true,
+          multiLine: esResuelto,
           actions: n.ticket_id
             ? [{ label: 'Ver ticket', color: 'white', handler: () => { router.push(`/tickets/${n.ticket_id}`) } }]
             : []
@@ -255,7 +254,7 @@ async function abrirNotificacion(n) {
 }
 
 function getNotifIcon(tipo) {
-  return { asignacion: 'person_add', estado: 'sync', comentario: 'chat', info: 'info' }[tipo] || 'notifications'
+  return { asignacion: 'person_add', estado: 'sync', resuelto: 'check_circle', comentario: 'chat', info: 'info' }[tipo] || 'notifications'
 }
 
 function formatTimeAgo(dateStr) {
@@ -285,6 +284,9 @@ function getRolLabel(rol) {
 }
 
 async function handleLogout() {
+  // Detener polling ANTES de llamar la API
+  clearInterval(notifInterval)
+  notifInterval = null
   const rol = authStore.profile?.rol
   await authStore.logout()
   router.push(rol === 'encargada' ? '/sucursal-select' : '/login')

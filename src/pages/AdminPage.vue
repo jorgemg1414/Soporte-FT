@@ -281,6 +281,7 @@
 import { ref, computed, onMounted } from 'vue'
 import api from '../lib/api'
 import { useQuasar } from 'quasar'
+import { getRolColor, getRolLabel } from '../composables/useTicketHelpers'
 
 const $q = useQuasar()
 const tab = ref('sucursales')
@@ -582,14 +583,8 @@ async function desbloquearIps() {
   }
 }
 
-function getRolColor(rol) { return { admin: 'negative', encargada: 'primary', soporte: 'positive' }[rol] || 'grey' }
-function getRolLabel(rol)  { return { admin: 'Administrador', encargada: 'Encargado/a', soporte: 'Soporte Técnico' }[rol] || rol }
+
 </script>
 
 <style scoped>
-.welcome-banner {
-  background: linear-gradient(135deg, #1565C0 0%, #1976D2 60%, #42A5F5 100%);
-  border-radius: 16px;
-  box-shadow: 0 4px 20px rgba(25, 118, 210, 0.3);
-}
 </style>

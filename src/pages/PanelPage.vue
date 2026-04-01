@@ -65,6 +65,17 @@
       </div>
     </div>
 
+    <!-- Búsqueda full-text -->
+    <div class="q-px-sm q-mb-sm">
+      <q-input v-model="searchQuery" outlined dense placeholder="Buscar por contenido del ticket..."
+        clearable :loading="buscando" @update:model-value="onSearchInput" style="border-radius: 10px">
+        <template #prepend><q-icon name="search" /></template>
+        <template v-if="searchResults.length > 0" #append>
+          <q-badge color="primary" :label="`${searchResults.length}`" />
+        </template>
+      </q-input>
+    </div>
+
     <!-- Lista de tickets -->
     <div v-if="loading && !tickets.length" class="flex flex-center q-pa-xl">
       <q-spinner color="primary" size="50px" />
@@ -136,11 +147,16 @@ import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
 import { usePolling } from '../composables/usePolling'
 import { useSLA } from '../composables/useSLA'
+import { getEstadoColor, getEstadoHex, getEstadoLabel, getCategoryIcon, getCategoryLabel } from '../composables/useTicketHelpers'
 
 const $q = useQuasar()
 const loading = ref(false)
 const tickets = ref([])
 const filtroActivo = ref(null)
+const searchQuery = ref('')
+const searchResults = ref([])
+const buscando = ref(false)
+let searchTimeout = null
 const { slaLabel, slaBadgeColor, slaIcon, violaSLA } = useSLA()
 
 const fechaHoy = format(new Date(), "EEEE d 'de' MMMM yyyy", { locale: es })
@@ -156,13 +172,30 @@ const filtros = [
 const urgentes = computed(() => tickets.value.filter(t => esUrgente(t)))
 
 const ticketsFiltrados = computed(() => {
-  if (filtroActivo.value === 'urgente') return urgentes.value
-  return tickets.value.filter(t => filtroActivo.value === null || t.estado === filtroActivo.value)
+  let base = searchResults.value.length > 0 ? searchResults.value : tickets.value
+  if (filtroActivo.value === 'urgente') return base.filter(t => esUrgente(t))
+  return base.filter(t => filtroActivo.value === null || t.estado === filtroActivo.value)
 })
 
 function contarEstado(estado) {
   if (estado === null) return tickets.value.length
   return tickets.value.filter(t => t.estado === estado).length
+}
+
+// Búsqueda full-text con debounce
+function onSearchInput(val) {
+  clearTimeout(searchTimeout)
+  searchResults.value = []
+  if (!val || val.trim().length < 3) return
+
+  searchTimeout = setTimeout(async () => {
+    buscando.value = true
+    try {
+      const { data } = await api.get(`/tickets/search?q=${encodeURIComponent(val.trim())}`)
+      searchResults.value = data || []
+    } catch { /* silencioso */ }
+    finally { buscando.value = false }
+  }, 400)
 }
 
 function esUrgente(t) {
@@ -193,21 +226,7 @@ async function cargar() {
 onMounted(cargar)
 const { secondsAgo } = usePolling(cargar, 30000)
 
-function getEstadoColor(e) {
-  return { abierto: 'warning', en_proceso: 'info', resuelto: 'positive', cerrado: 'grey-6' }[e] || 'grey'
-}
-function getEstadoHex(e) {
-  return { abierto: '#FFA000', en_proceso: '#1976D2', resuelto: '#388E3C', cerrado: '#9E9E9E' }[e] || '#ccc'
-}
-function getEstadoLabel(e) {
-  return { abierto: 'Abierto', en_proceso: 'En Proceso', resuelto: 'Resuelto', cerrado: 'Cerrado' }[e] || e
-}
-function getCategoryIcon(cat) {
-  return { cancelacion_documento: 'cancel', falla_pvwin: 'computer', falla_computadora: 'desktop_windows', otro: 'help_outline' }[cat] || 'help_outline'
-}
-function getCategoryLabel(cat) {
-  return { cancelacion_documento: 'Cancelación', falla_pvwin: 'Falla PVWIN', falla_computadora: 'Falla Equipo', otro: 'Otro' }[cat] || cat
-}
+
 </script>
 
 <style scoped>

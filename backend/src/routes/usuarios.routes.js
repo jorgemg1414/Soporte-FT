@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import bcrypt from 'bcrypt'
 import db, { genId } from '../lib/database.js'
 import { authenticate, requireRole } from '../middleware/auth.js'
 
@@ -17,11 +18,8 @@ router.get('/tecnicos', requireRole('soporte', 'admin'), (req, res) => {
   }
 })
 
-// A partir de aquí, todo requiere admin
-router.use(requireRole('admin'))
-
-// ─── GET /api/usuarios ────────────────────────────────────────────────────────
-router.get('/', (req, res) => {
+// ─── GET /api/usuarios (soporte + admin) ──────────────────────────────────────
+router.get('/', requireRole('soporte', 'admin'), (req, res) => {
   try {
     const profiles = db.prepare('SELECT * FROM profiles ORDER BY nombre').all()
     return res.json(profiles.map(p => {
@@ -35,6 +33,9 @@ router.get('/', (req, res) => {
     res.status(500).json({ error: 'Error al obtener usuarios' })
   }
 })
+
+// A partir de aquí, escrituras requieren admin
+router.use(requireRole('admin'))
 
 // ─── POST /api/usuarios ───────────────────────────────────────────────────────
 router.post('/', (req, res) => {
@@ -50,7 +51,7 @@ router.post('/', (req, res) => {
 
     const newId = genId()
 
-    db.prepare('INSERT INTO users_auth (id, email, password) VALUES (?,?,?)').run(newId, email, password)
+    db.prepare('INSERT INTO users_auth (id, email, password) VALUES (?,?,?)').run(newId, email, bcrypt.hashSync(password, 10))
     db.prepare('INSERT INTO profiles (id, nombre, rol, sucursal_id, email) VALUES (?,?,?,?,?)')
       .run(newId, nombre, rol, sucursal_id || null, email)
 
@@ -75,6 +76,11 @@ router.put('/:id', (req, res) => {
     const exists = db.prepare('SELECT id FROM profiles WHERE id = ?').get(id)
     if (!exists) return res.status(404).json({ error: 'Usuario no encontrado' })
 
+    // No permitir que un admin se cambie su propio rol
+    if (id === req.user.sub && rol !== req.user.rol) {
+      return res.status(403).json({ error: 'No puedes cambiar tu propio rol' })
+    }
+
     db.prepare('UPDATE profiles SET nombre=?, rol=?, sucursal_id=? WHERE id=?')
       .run(nombre, rol, sucursal_id || null, id)
 
@@ -94,6 +100,11 @@ router.put('/:id', (req, res) => {
 router.delete('/:id', (req, res) => {
   try {
     const { id } = req.params
+
+    // No permitir que un admin se borre a sí mismo
+    if (id === req.user.sub) {
+      return res.status(403).json({ error: 'No puedes eliminar tu propia cuenta' })
+    }
 
     const exists = db.prepare('SELECT id FROM profiles WHERE id = ?').get(id)
     if (!exists) return res.status(404).json({ error: 'Usuario no encontrado' })
