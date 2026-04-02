@@ -104,11 +104,18 @@
 
         <q-card-section>
           <q-form @submit.prevent="confirmarPassword">
+            <!-- Campo oculto para que el gestor de contraseñas asocie usuario + contraseña -->
+            <input type="text" name="username"
+              :value="sucursalSeleccionada?.nombre"
+              autocomplete="username"
+              style="display:none" readonly />
             <q-input
               v-model="passwordInput"
               outlined
               label="Contraseña de sucursal"
               :type="mostrarPassword ? 'text' : 'password'"
+              name="password"
+              autocomplete="current-password"
               autofocus
               :error="!!errorPassword"
               :error-message="errorPassword"

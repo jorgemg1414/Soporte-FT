@@ -1,9 +1,12 @@
 <template>
   <q-page class="q-pa-md" v-if="ticket">
     <div class="welcome-banner row items-center q-px-md q-py-sm q-mb-md">
-      <q-btn flat round icon="arrow_back" color="white" @click="$router.back()" />
+      <q-btn flat round icon="arrow_back" color="white" @click="$router.push('/tickets')" />
       <div class="q-ml-sm col">
-        <div class="text-subtitle1 text-white text-weight-bold">{{ ticket.folio }}</div>
+        <q-breadcrumbs active-color="white" class="q-mb-xs" separator-color="blue-3" style="font-size: 12px">
+          <q-breadcrumbs-el label="Reportes" to="/tickets" class="text-blue-3" style="cursor:pointer" />
+          <q-breadcrumbs-el :label="ticket.folio" class="text-white text-weight-bold" />
+        </q-breadcrumbs>
         <div class="text-blue-2 text-caption">
           {{ ticket.sucursales?.nombre }} · {{ ticket.profiles?.nombre }} · {{ formatDate(ticket.created_at) }}
         </div>
@@ -15,6 +18,11 @@
         <q-badge :color="getEstadoColor(ticket.estado)" style="font-size: 13px; padding: 6px 14px; border-radius: 20px">
           {{ getEstadoLabel(ticket.estado) }}
         </q-badge>
+        <q-btn v-if="authStore.profile?.rol === 'admin'"
+          flat round icon="delete" color="white" size="sm"
+          @click="confirmarEliminar">
+          <q-tooltip>Eliminar ticket</q-tooltip>
+        </q-btn>
       </div>
     </div>
 
@@ -208,6 +216,40 @@
             </q-input>
           </q-card-section>
         </q-card>
+
+        <!-- Tickets relacionados -->
+        <q-card bordered v-if="relacionados.length > 0" class="q-mt-md">
+          <q-card-section class="q-pb-xs">
+            <div class="row items-center q-gutter-xs">
+              <q-icon name="link" color="orange" size="20px" />
+              <div class="text-subtitle2 text-weight-bold">Tickets similares abiertos</div>
+              <q-badge color="orange" :label="relacionados.length" />
+            </div>
+            <div class="text-caption text-grey-6">De la misma sucursal con problema parecido</div>
+          </q-card-section>
+          <q-separator />
+          <q-list separator>
+            <q-item v-for="r in relacionados" :key="r.id"
+              clickable v-ripple @click="$router.push(`/tickets/${r.id}`)">
+              <q-item-section avatar>
+                <q-icon name="confirmation_number" color="orange" size="20px" />
+              </q-item-section>
+              <q-item-section>
+                <q-item-label>
+                  <span class="text-orange text-weight-bold">{{ r.folio }}</span>
+                  <span class="q-ml-xs text-grey-7">— {{ r.titulo }}</span>
+                </q-item-label>
+                <q-item-label caption>{{ getCategoryLabel(r.categoria) }} · {{ formatDate(r.created_at) }}</q-item-label>
+              </q-item-section>
+              <q-item-section side>
+                <q-badge :color="getEstadoColor(r.estado)" style="font-size: 10px">
+                  {{ getEstadoLabel(r.estado) }}
+                </q-badge>
+              </q-item-section>
+            </q-item>
+          </q-list>
+        </q-card>
+
       </div>
 
     </div>
@@ -220,14 +262,16 @@
 
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { useTicketsStore } from '../stores/tickets'
 import api from '../lib/api'
 import { useQuasar } from 'quasar'
 import { getEstadoColor, getEstadoLabel, getCategoryIcon, getCategoryLabel, getTipoDocLabel, getRolColor, getRolLabel, formatDate } from '../composables/useTicketHelpers'
 
+
 const route = useRoute()
+const router = useRouter()
 const authStore = useAuthStore()
 const ticketsStore = useTicketsStore()
 const $q = useQuasar()
@@ -244,6 +288,7 @@ const enviando = ref(false)
 const enviandoNota = ref(false)
 const cambiandoEstado = ref(false)
 const marcandoUrgente = ref(false)
+const relacionados = ref([])
 
 const todasAcciones = [
   { label: 'En Proceso', value: 'en_proceso', color: 'info',     icon: 'sync' },
@@ -295,6 +340,23 @@ async function loadAll() {
     tecnicos.value = results[4].data || []
     tecnicoSeleccionado.value = ticket.value.asignado_a || null
   }
+
+  // Buscar tickets relacionados (solo si el ticket sigue abierto)
+  if (['abierto', 'en_proceso'].includes(ticket.value.estado)) {
+    try {
+      const texto = `${ticket.value.descripcion || ''} ${ticket.value.detalle_falla || ''}`.trim()
+      const { data: dup } = await api.post('/tickets/check-duplicados', {
+        titulo: ticket.value.titulo,
+        descripcion: texto,
+        categoria: ticket.value.categoria,
+        sucursal_id: ticket.value.sucursal_id
+      })
+      // Excluir el ticket actual de los relacionados
+      relacionados.value = (dup.duplicados || []).filter(r => r.id !== ticket.value.id)
+    } catch { /* silencioso */ }
+  } else {
+    relacionados.value = []
+  }
 }
 
 async function enviarComentario() {
@@ -327,8 +389,7 @@ async function enviarNota() {
 
 async function asignarTecnico(tecnicoId) {
   try {
-    const { data } = await api.put(`/tickets/${route.params.id}/asignar`, { asignado_a: tecnicoId })
-    ticket.value = data
+    await api.put(`/tickets/${route.params.id}/asignar`, { asignado_a: tecnicoId })
     await loadAll()
     $q.notify({ type: 'positive', message: tecnicoId ? 'Técnico asignado' : 'Asignación removida' })
   } catch {
@@ -338,16 +399,34 @@ async function asignarTecnico(tecnicoId) {
 
 async function toggleUrgente() {
   marcandoUrgente.value = true
+  const eraUrgente = ticket.value.urgente
   try {
-    const { data } = await api.put(`/tickets/${route.params.id}/urgente`, { urgente: !ticket.value.urgente })
-    ticket.value.urgente = data.urgente
+    await api.put(`/tickets/${route.params.id}/urgente`, { urgente: !eraUrgente })
     await loadAll()
-    $q.notify({ type: ticket.value.urgente ? 'warning' : 'positive', message: ticket.value.urgente ? 'Ticket marcado como urgente' : 'Urgencia removida' })
+    $q.notify({ type: !eraUrgente ? 'warning' : 'positive', message: !eraUrgente ? 'Ticket marcado como urgente' : 'Urgencia removida' })
   } catch {
     $q.notify({ type: 'negative', message: 'Error al cambiar urgencia' })
   } finally {
     marcandoUrgente.value = false
   }
+}
+
+function confirmarEliminar() {
+  $q.dialog({
+    title: 'Eliminar ticket',
+    message: `¿Eliminar el ticket <b>${ticket.value.folio}</b>? Esta acción no se puede deshacer.`,
+    html: true,
+    cancel: { label: 'Cancelar', flat: true },
+    ok: { label: 'Eliminar', color: 'negative', unelevated: true }
+  }).onOk(async () => {
+    try {
+      await api.delete(`/tickets/${ticket.value.id}`)
+      $q.notify({ type: 'positive', message: `Ticket ${ticket.value.folio} eliminado` })
+      router.push('/tickets')
+    } catch {
+      $q.notify({ type: 'negative', message: 'Error al eliminar el ticket' })
+    }
+  })
 }
 
 async function cambiarEstado(nuevoEstado) {

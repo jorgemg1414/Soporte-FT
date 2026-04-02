@@ -10,10 +10,11 @@
     </div>
 
     <q-tabs v-model="tab" align="left" active-color="primary" indicator-color="primary" class="q-mb-md">
-      <q-tab name="sucursales"  icon="store"    label="Sucursales" />
-      <q-tab name="usuarios"    icon="people"   label="Usuarios" />
-      <q-tab name="catalogos"   icon="category" label="Catálogos" />
-      <q-tab name="contrasenas" icon="lock"     label="Contraseñas" />
+      <q-tab name="sucursales"  icon="store"         label="Sucursales" />
+      <q-tab name="usuarios"    icon="people"         label="Usuarios" />
+      <q-tab name="catalogos"   icon="category"       label="Catálogos" />
+      <q-tab name="asignacion"  icon="assignment_ind" label="Asignación Auto." />
+      <q-tab name="contrasenas" icon="lock"           label="Contraseñas" />
     </q-tabs>
 
     <q-tab-panels v-model="tab" animated>
@@ -135,6 +136,55 @@
               </q-td>
             </template>
           </q-table>
+        </q-card>
+      </q-tab-panel>
+
+      <!-- ASIGNACIÓN AUTOMÁTICA -->
+      <q-tab-panel name="asignacion" class="q-pa-none">
+        <q-card bordered>
+          <q-card-section>
+            <div class="text-h6">Asignación automática de técnicos</div>
+            <div class="text-caption text-grey-6 q-mb-md">
+              Cuando se cree un ticket de una categoría con regla, se asignará automáticamente al técnico seleccionado.
+            </div>
+            <q-banner class="bg-blue-1 text-blue-9 q-mb-md" rounded>
+              <template #avatar><q-icon name="info" color="info" /></template>
+              Las reglas se aplican al momento de crear el ticket. Si no hay regla para una categoría, el ticket queda sin asignar.
+            </q-banner>
+            <div class="q-gutter-md">
+              <q-card v-for="cat in categoriasAsignacion" :key="cat.value" flat bordered class="q-pa-md">
+                <div class="row items-center q-gutter-md">
+                  <q-icon :name="cat.icon" :color="cat.color" size="28px" />
+                  <div class="col">
+                    <div class="text-subtitle2">{{ cat.label }}</div>
+                    <div class="text-caption text-grey-6">{{ cat.descripcion }}</div>
+                  </div>
+                  <div class="col-auto row items-center q-gutter-sm">
+                    <q-select
+                      v-model="reglasLocales[cat.value]"
+                      :options="tecnicosOptions"
+                      emit-value map-options
+                      multiple use-chips
+                      outlined dense
+                      label="Técnicos asignados"
+                      clearable
+                      style="min-width: 240px"
+                      :loading="cargandoReglas"
+                    />
+                    <q-btn
+                      unelevated dense
+                      :color="reglasLocales[cat.value]?.length ? 'primary' : 'grey-4'"
+                      :text-color="reglasLocales[cat.value]?.length ? 'white' : 'grey-7'"
+                      :icon="reglasLocales[cat.value]?.length ? 'save' : 'delete'"
+                      :label="reglasLocales[cat.value]?.length ? 'Guardar' : 'Quitar'"
+                      :loading="guardandoRegla === cat.value"
+                      @click="guardarRegla(cat.value)"
+                    />
+                  </div>
+                </div>
+              </q-card>
+            </div>
+          </q-card-section>
         </q-card>
       </q-tab-panel>
 
@@ -260,7 +310,7 @@
             :rules="[val => !!val || 'Requerido', val => /^[a-z0-9]+$/.test(val) || 'Solo letras minúsculas y números, sin espacios']"
             @update:model-value="v => editUsuario.username = v.toLowerCase().replace(/[^a-z0-9]/g, '')" />
           <q-input v-if="!editUsuario.id" v-model="editUsuario.password" outlined label="Contraseña *" type="password"
-            :rules="[val => !!val || 'Requerido', val => val.length >= 6 || 'Mínimo 6 caracteres']" />
+            :rules="[val => !!val || 'Requerido', val => val.length >= 8 || 'Mínimo 8 caracteres']" />
           <q-select v-model="editUsuario.rol" outlined label="Rol *"
             :options="rolesOptions" emit-value map-options
             :rules="[val => !!val || 'Selecciona un rol']" />
@@ -387,9 +437,13 @@ async function eliminarCatalogo(item) {
     cancel: { label: 'Cancelar', flat: true },
     ok: { label: 'Eliminar', color: 'negative', unelevated: true }
   }).onOk(async () => {
-    await api.delete(`/catalogos/${item.id}`)
-    await cargarCatalogo()
-    $q.notify({ type: 'positive', message: 'Opción eliminada' })
+    try {
+      await api.delete(`/catalogos/${item.id}`)
+      await cargarCatalogo()
+      $q.notify({ type: 'positive', message: 'Opción eliminada' })
+    } catch (e) {
+      $q.notify({ type: 'negative', message: e.response?.data?.error || 'Error al eliminar la opción' })
+    }
   })
 }
 
@@ -409,12 +463,13 @@ const colsUsuarios = [
   { name: 'nombre',   label: 'Nombre',   field: 'nombre', align: 'left', sortable: true },
   { name: 'email',    label: 'Usuario',  field: 'email',  align: 'left' },
   { name: 'rol',      label: 'Rol',      field: 'rol',    align: 'center' },
+  { name: 'sucursal', label: 'Sucursal', field: 'id',     align: 'left' },
   { name: 'acciones', label: 'Acciones', field: 'id',     align: 'center' }
 ]
 
 onMounted(async () => {
   cargando.value = true
-  await Promise.all([loadSucursales(), loadUsuarios()])
+  await Promise.all([loadSucursales(), loadUsuarios(), loadReglas()])
   cargando.value = false
 })
 
@@ -458,9 +513,13 @@ function confirmarEliminarSucursal(suc) {
     cancel: { label: 'Cancelar', flat: true },
     ok: { label: 'Eliminar', color: 'negative', unelevated: true }
   }).onOk(async () => {
-    await api.delete(`/sucursales/${suc.id}`)
-    await loadSucursales()
-    $q.notify({ type: 'positive', message: 'Sucursal eliminada' })
+    try {
+      await api.delete(`/sucursales/${suc.id}`)
+      await loadSucursales()
+      $q.notify({ type: 'positive', message: 'Sucursal eliminada' })
+    } catch (e) {
+      $q.notify({ type: 'negative', message: e.response?.data?.error || 'Error al eliminar la sucursal' })
+    }
   })
 }
 
@@ -519,6 +578,10 @@ async function guardarUsuario() {
 
 async function cambiarPwIndividual() {
   if (!pwSucursalId.value || !pwIndividual.value) return
+  if (pwIndividual.value.length < 8) {
+    $q.notify({ type: 'warning', message: 'La contraseña debe tener al menos 8 caracteres' })
+    return
+  }
   guardandoPw.value = true
   try {
     await api.put(`/sucursales/${pwSucursalId.value}/password`, { password: pwIndividual.value })
@@ -533,6 +596,10 @@ async function cambiarPwIndividual() {
 
 async function cambiarPwTodas() {
   if (!pwTodas.value) return
+  if (pwTodas.value.length < 8) {
+    $q.notify({ type: 'warning', message: 'La contraseña debe tener al menos 8 caracteres' })
+    return
+  }
   $q.dialog({
     title: 'Confirmar cambio',
     message: 'Esto cambiará la contraseña de TODAS las sucursales. ¿Continuar?',
@@ -583,6 +650,55 @@ async function desbloquearIps() {
   }
 }
 
+// ─── ASIGNACIÓN AUTOMÁTICA ────────────────────────────────────────────────────
+const categoriasAsignacion = [
+  { value: 'cancelacion_documento', label: 'Cancelación de documento', descripcion: 'Errores en documentos de PvWin (notas, traspasos)', icon: 'description', color: 'blue' },
+  { value: 'falla_pvwin',           label: 'Falla PvWin',              descripcion: 'Problemas con el sistema PvWin',                      icon: 'computer',    color: 'purple' },
+  { value: 'falla_computadora',     label: 'Falla de computadora',     descripcion: 'Hardware, sistema operativo, periféricos',            icon: 'desktop_windows', color: 'orange' },
+  { value: 'otro',                  label: 'Otro',                     descripcion: 'Cualquier otro tipo de reporte',                      icon: 'help_outline', color: 'grey' }
+]
+
+const reglasLocales   = ref({})
+const cargandoReglas  = ref(false)
+const guardandoRegla  = ref(null)
+
+const tecnicosOptions = computed(() =>
+  usuarios.value
+    .filter(u => u.rol === 'soporte' || u.rol === 'admin')
+    .map(u => ({ label: u.nombre, value: u.id }))
+)
+
+async function loadReglas() {
+  cargandoReglas.value = true
+  try {
+    const { data } = await api.get('/reglas-asignacion')
+    const mapa = {}
+    for (const r of data) mapa[r.categoria] = r.tecnico_ids || []
+    reglasLocales.value = mapa
+  } catch {
+    // sin reglas aún
+  } finally {
+    cargandoReglas.value = false
+  }
+}
+
+async function guardarRegla(categoria) {
+  guardandoRegla.value = categoria
+  const ids = reglasLocales.value[categoria] || []
+  try {
+    if (ids.length > 0) {
+      await api.put(`/reglas-asignacion/${categoria}`, { tecnico_ids: ids })
+      $q.notify({ type: 'positive', message: 'Regla guardada' })
+    } else {
+      await api.delete(`/reglas-asignacion/${categoria}`)
+      $q.notify({ type: 'positive', message: 'Regla eliminada' })
+    }
+  } catch (e) {
+    $q.notify({ type: 'negative', message: e.response?.data?.error || 'Error al guardar la regla' })
+  } finally {
+    guardandoRegla.value = null
+  }
+}
 
 </script>
 

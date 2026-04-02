@@ -18,12 +18,16 @@
           {{ authStore.profile.sucursales.nombre }}
         </q-chip>
 
+        <q-btn flat round icon="search" color="white" size="sm" @click="searchOpen = true">
+          <q-tooltip>Buscar tickets (Ctrl+K)</q-tooltip>
+        </q-btn>
+
         <q-btn flat round :icon="$q.dark.isActive ? 'light_mode' : 'dark_mode'" color="white" @click="toggleDark" size="sm">
           <q-tooltip>{{ $q.dark.isActive ? 'Modo claro' : 'Modo oscuro' }}</q-tooltip>
         </q-btn>
 
         <!-- Campana de notificaciones -->
-        <q-btn flat round icon="notifications" color="white" size="sm" :class="notifCount > 0 ? 'campana-shake' : ''" @click="notifCount > 0 ? null : null">
+        <q-btn flat round icon="notifications" color="white" size="sm" :class="notifCount > 0 ? 'campana-shake' : ''">
           <q-badge v-if="notifCount > 0" color="negative" floating>{{ notifCount > 9 ? '9+' : notifCount }}</q-badge>
           <q-menu anchor="bottom right" self="top right" style="min-width: 340px; max-width: 400px">
             <q-list>
@@ -75,6 +79,11 @@
                 </q-item-section>
               </q-item>
               <q-separator />
+              <q-item v-if="authStore.profile?.rol === 'admin' || authStore.profile?.rol === 'soporte'"
+                clickable v-close-popup @click="dialogCambiarPw = true">
+                <q-item-section avatar><q-icon name="lock_reset" color="primary" /></q-item-section>
+                <q-item-section>Cambiar contraseña</q-item-section>
+              </q-item>
               <q-item clickable v-close-popup @click="handleLogout">
                 <q-item-section avatar><q-icon name="logout" color="negative" /></q-item-section>
                 <q-item-section>Cerrar sesión</q-item-section>
@@ -84,6 +93,46 @@
         </q-btn>
       </q-toolbar>
     </q-header>
+
+    <!-- Dialog cambiar contraseña -->
+    <q-dialog v-model="dialogCambiarPw" persistent>
+      <q-card style="min-width: 360px">
+        <q-card-section>
+          <div class="text-h6">Cambiar contraseña</div>
+          <div class="text-caption text-grey-6">Solo afecta tu cuenta</div>
+        </q-card-section>
+        <q-card-section class="q-gutter-md">
+          <q-input v-model="pw.actual" outlined dense label="Contraseña actual"
+            :type="pw.showActual ? 'text' : 'password'"
+            name="current-password" autocomplete="current-password">
+            <template #append>
+              <q-icon :name="pw.showActual ? 'visibility_off' : 'visibility'"
+                class="cursor-pointer" @click="pw.showActual = !pw.showActual" />
+            </template>
+          </q-input>
+          <q-input v-model="pw.nueva" outlined dense label="Nueva contraseña"
+            :type="pw.showNueva ? 'text' : 'password'"
+            name="new-password" autocomplete="new-password"
+            hint="Mínimo 8 caracteres">
+            <template #append>
+              <q-icon :name="pw.showNueva ? 'visibility_off' : 'visibility'"
+                class="cursor-pointer" @click="pw.showNueva = !pw.showNueva" />
+            </template>
+          </q-input>
+          <q-input v-model="pw.confirmar" outlined dense label="Confirmar nueva contraseña"
+            :type="pw.showNueva ? 'text' : 'password'"
+            name="confirm-password" autocomplete="new-password"
+            :error="pw.confirmar.length > 0 && pw.nueva !== pw.confirmar"
+            error-message="Las contraseñas no coinciden" />
+        </q-card-section>
+        <q-card-actions align="right" class="q-pt-none">
+          <q-btn flat label="Cancelar" v-close-popup @click="resetPwForm" />
+          <q-btn color="primary" label="Guardar" unelevated :loading="pw.guardando"
+            :disable="!pw.actual || !pw.nueva || pw.nueva !== pw.confirmar || pw.nueva.length < 8"
+            @click="cambiarMiPassword" />
+        </q-card-actions>
+      </q-card>
+    </q-dialog>
 
     <q-drawer v-model="drawer" show-if-above :width="240" bordered>
       <q-scroll-area class="fit">
@@ -170,20 +219,27 @@
     <q-page-container>
       <router-view />
     </q-page-container>
+
+    <SearchModal v-model="searchOpen" />
   </q-layout>
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { useQuasar } from 'quasar'
 import api from '../lib/api'
+import SearchModal from '../components/SearchModal.vue'
+import { useEventos } from '../composables/useEventos'
 
 const authStore = useAuthStore()
 const router = useRouter()
 const $q = useQuasar()
 const drawer = ref(false)
+const searchOpen = ref(false)
+
+useEventos()
 
 // ── Notificaciones ──
 const notificaciones = ref([])
@@ -254,7 +310,7 @@ async function abrirNotificacion(n) {
 }
 
 function getNotifIcon(tipo) {
-  return { asignacion: 'person_add', estado: 'sync', resuelto: 'check_circle', comentario: 'chat', info: 'info' }[tipo] || 'notifications'
+  return notifIconos[tipo] || 'notifications'
 }
 
 function formatTimeAgo(dateStr) {
@@ -281,6 +337,29 @@ function toggleDark() {
 
 function getRolLabel(rol) {
   return { admin: 'Administrador', encargada: 'Encargado/a de Sucursal', soporte: 'Soporte Técnico' }[rol] || ''
+}
+
+// ── Cambiar contraseña propia ────────────────────────────────────────────────
+const dialogCambiarPw = ref(false)
+const pw = reactive({ actual: '', nueva: '', confirmar: '', showActual: false, showNueva: false, guardando: false })
+
+function resetPwForm() {
+  Object.assign(pw, { actual: '', nueva: '', confirmar: '', showActual: false, showNueva: false, guardando: false })
+}
+
+async function cambiarMiPassword() {
+  if (!pw.actual || !pw.nueva) return
+  pw.guardando = true
+  try {
+    await api.put('/usuarios/me/password', { actual: pw.actual, nueva: pw.nueva })
+    dialogCambiarPw.value = false
+    resetPwForm()
+    $q.notify({ type: 'positive', message: 'Contraseña actualizada correctamente' })
+  } catch (e) {
+    $q.notify({ type: 'negative', message: e.response?.data?.error || 'Error al cambiar la contraseña' })
+  } finally {
+    pw.guardando = false
+  }
 }
 
 async function handleLogout() {

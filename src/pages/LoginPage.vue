@@ -17,6 +17,7 @@
                 v-model="usuario"
                 outlined
                 placeholder="Ingrese su usuario"
+                name="username"
                 autocomplete="username"
                 class="q-mb-md"
                 :rules="[val => !!val || 'El usuario es requerido']"
@@ -31,6 +32,7 @@
                 v-model="password"
                 outlined
                 :type="showPass ? 'text' : 'password'"
+                name="password"
                 autocomplete="current-password"
                 class="q-mb-lg"
                 :rules="[val => !!val || 'La contraseña es requerida']"
@@ -91,7 +93,7 @@ async function handleLogin() {
   try {
     const data = await authStore.login(usuario.value.trim().toLowerCase(), password.value)
     const rol = data.user?.rol
-    router.push(rol === 'encargada' ? '/sucursal' : '/panel')
+    router.push(rol === 'encargada' ? '/sucursal' : '/tickets')
   } catch {
     $q.notify({ type: 'negative', message: 'Usuario o contraseña incorrectos' })
   } finally {

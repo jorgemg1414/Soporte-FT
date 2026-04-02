@@ -190,9 +190,9 @@ async function cargar() {
 
 onMounted(async () => {
   await cargar()
-  const [sucRes, tecRes] = await Promise.all([api.get('/sucursales'), api.get('/usuarios')])
+  const [sucRes, tecRes] = await Promise.all([api.get('/sucursales'), api.get('/usuarios/tecnicos')])
   sucursales.value = sucRes.data || []
-  tecnicos.value = (tecRes.data || []).filter(u => u.rol === 'soporte' || u.rol === 'admin')
+  tecnicos.value = tecRes.data || []
 })
 
 const { secondsAgo } = usePolling(cargar, 30000)

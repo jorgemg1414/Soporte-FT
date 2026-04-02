@@ -21,16 +21,44 @@ router.get('/tecnicos', requireRole('soporte', 'admin'), (req, res) => {
 // ─── GET /api/usuarios (soporte + admin) ──────────────────────────────────────
 router.get('/', requireRole('soporte', 'admin'), (req, res) => {
   try {
-    const profiles = db.prepare('SELECT * FROM profiles ORDER BY nombre').all()
-    return res.json(profiles.map(p => {
-      const suc = p.sucursal_id
-        ? db.prepare('SELECT id, nombre FROM sucursales WHERE id = ?').get(p.sucursal_id)
-        : null
-      return { ...p, sucursales: suc || null }
-    }))
+    const rows = db.prepare(`
+      SELECT p.*, s.id as _suc_id, s.nombre as _suc_nombre
+      FROM profiles p
+      LEFT JOIN sucursales s ON p.sucursal_id = s.id
+      ORDER BY p.nombre
+    `).all()
+    return res.json(rows.map(p => ({
+      ...p,
+      _suc_id: undefined,
+      _suc_nombre: undefined,
+      sucursales: p._suc_id ? { id: p._suc_id, nombre: p._suc_nombre } : null
+    })))
   } catch (err) {
     console.error('Error getUsuarios:', err)
     res.status(500).json({ error: 'Error al obtener usuarios' })
+  }
+})
+
+// ─── PUT /api/usuarios/me/password ───────────────────────────────────────────
+router.put('/me/password', requireRole('admin', 'soporte'), (req, res) => {
+  try {
+    const { actual, nueva } = req.body
+    if (!actual || !nueva) return res.status(400).json({ error: 'Contraseña actual y nueva son requeridas' })
+    if (nueva.length < 8) return res.status(400).json({ error: 'La nueva contraseña debe tener mínimo 8 caracteres' })
+
+    const auth = db.prepare('SELECT * FROM users_auth WHERE id = ?').get(req.user.sub)
+    if (!auth) return res.status(404).json({ error: 'Usuario no encontrado' })
+
+    const passwordOk = bcrypt.compareSync(actual, auth.password)
+    if (!passwordOk) {
+      return res.status(422).json({ error: 'La contraseña actual es incorrecta' })
+    }
+
+    db.prepare('UPDATE users_auth SET password = ? WHERE id = ?').run(bcrypt.hashSync(nueva, 10), req.user.sub)
+    return res.json({ ok: true })
+  } catch (err) {
+    console.error('Error changePassword:', err)
+    res.status(500).json({ error: 'Error al cambiar la contraseña' })
   }
 })
 

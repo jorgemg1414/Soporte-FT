@@ -3,6 +3,7 @@ import db, { generateFolio, genId } from '../lib/database.js'
 import { authenticate, requireRole } from '../middleware/auth.js'
 import { crearNotificacion } from './notificaciones.routes.js'
 import { notificarCambioEstado, notificarComentario, notificarAsignacion, notificarNuevoTicket } from '../lib/mailer.js'
+import { broadcast } from '../lib/broadcaster.js'
 
 const router = Router()
 
@@ -152,7 +153,7 @@ router.get('/stats', (req, res) => {
 
     // Totales
     const totalRow = db.prepare(`SELECT COUNT(*) as total FROM tickets t ${where}`).get(...params)
-    const urgentesRow = db.prepare(`SELECT COUNT(*) as total FROM tickets t ${where ? where + ' AND' : 'WHERE'} urgente = 1`).all(...params)
+    const urgentesRow = db.prepare(`SELECT COUNT(*) as total FROM tickets t ${where ? where + ' AND' : 'WHERE'} urgente = 1`).get(...params)
 
     // Por categoría
     const porCategoria = db.prepare(`SELECT categoria, COUNT(*) as total FROM tickets t ${where} GROUP BY categoria`).all(...params)
@@ -291,6 +292,31 @@ router.post('/', requireRole('encargada', 'admin'), (req, res) => {
     db.prepare('INSERT INTO historial_tickets (id, ticket_id, usuario_id, accion, detalle, created_at) VALUES (?,?,?,?,?,?)')
       .run(genId(), newId, req.user.sub, 'Ticket creado', `Reporte ${folio} creado por ${req.user.nombre}`, now)
 
+    // Auto-asignación por categoría (balance de carga entre técnicos configurados)
+    const regla = db.prepare('SELECT tecnico_ids FROM reglas_asignacion WHERE categoria = ?').get(ticketData.categoria)
+    if (regla) {
+      const ids = JSON.parse(regla.tecnico_ids || '[]')
+      if (ids.length > 0) {
+        // Elegir el técnico con menos tickets abiertos/en_proceso
+        const placeholders = ids.map(() => '?').join(',')
+        const cargas = db.prepare(`
+          SELECT p.id, p.nombre, COUNT(t.id) as carga
+          FROM profiles p
+          LEFT JOIN tickets t ON t.asignado_a = p.id AND t.estado IN ('abierto','en_proceso')
+          WHERE p.id IN (${placeholders})
+          GROUP BY p.id
+          ORDER BY carga ASC
+          LIMIT 1
+        `).get(...ids)
+
+        if (cargas) {
+          db.prepare('UPDATE tickets SET asignado_a = ?, updated_at = ? WHERE id = ?').run(cargas.id, now, newId)
+          db.prepare('INSERT INTO historial_tickets (id, ticket_id, usuario_id, accion, detalle, created_at) VALUES (?,?,?,?,?,?)')
+            .run(genId(), newId, req.user.sub, 'Asignación automática', `Asignado a ${cargas.nombre} por regla de categoría (${cargas.carga} tickets activos)`, now)
+        }
+      }
+    }
+
     // Notificar al equipo de sistemas
     const suc = db.prepare('SELECT nombre FROM sucursales WHERE id = ?').get(req.user.sucursal_id)
     notificarNuevoTicket({
@@ -302,6 +328,7 @@ router.post('/', requireRole('encargada', 'admin'), (req, res) => {
     }).catch(() => {})
 
     const newTicket = stmtTicketById.get(newId)
+    broadcast('ticket_nuevo', { id: newId, folio, sucursal: suc?.nombre, categoria: ticketData.categoria })
     return res.status(201).json(mapTicket(newTicket))
 
   } catch (err) {
@@ -484,6 +511,7 @@ router.put('/:id/estado', requireRole('soporte', 'admin'), (req, res) => {
     }
 
     const updated = stmtTicketById.get(id)
+    broadcast('ticket_actualizado', { id, estado })
     return res.json(mapTicket(updated))
 
   } catch (err) {
@@ -522,6 +550,11 @@ router.put('/:id/urgente', requireRole('soporte', 'admin'), (req, res) => {
 // ─── GET /api/tickets/:id/comentarios ─────────────────────────────────────────
 router.get('/:id/comentarios', (req, res) => {
   try {
+    const ticket = db.prepare('SELECT sucursal_id FROM tickets WHERE id = ?').get(req.params.id)
+    if (!ticket) return res.status(404).json({ error: 'Ticket no encontrado' })
+    if (req.user.rol === 'encargada' && ticket.sucursal_id !== req.user.sucursal_id) {
+      return res.status(403).json({ error: 'Sin permisos' })
+    }
     const rows = stmtComentarios.all(req.params.id)
     return res.json(rows.map(mapComment))
   } catch (err) {
@@ -541,6 +574,12 @@ router.post('/:id/comentarios', (req, res) => {
     }
     if (contenido.length > MAX_TEXT_LENGTH) {
       return res.status(400).json({ error: `El comentario no puede exceder ${MAX_TEXT_LENGTH} caracteres` })
+    }
+
+    const ticketCheck = db.prepare('SELECT sucursal_id FROM tickets WHERE id = ?').get(id)
+    if (!ticketCheck) return res.status(404).json({ error: 'Ticket no encontrado' })
+    if (req.user.rol === 'encargada' && ticketCheck.sucursal_id !== req.user.sucursal_id) {
+      return res.status(403).json({ error: 'Sin permisos' })
     }
 
     const now = new Date().toISOString()
@@ -586,6 +625,11 @@ router.post('/:id/comentarios', (req, res) => {
 // ─── GET /api/tickets/:id/historial ───────────────────────────────────────────
 router.get('/:id/historial', (req, res) => {
   try {
+    const ticket = db.prepare('SELECT sucursal_id FROM tickets WHERE id = ?').get(req.params.id)
+    if (!ticket) return res.status(404).json({ error: 'Ticket no encontrado' })
+    if (req.user.rol === 'encargada' && ticket.sucursal_id !== req.user.sucursal_id) {
+      return res.status(403).json({ error: 'Sin permisos' })
+    }
     const historial = db.prepare('SELECT * FROM historial_tickets WHERE ticket_id = ? ORDER BY created_at DESC').all(req.params.id)
     return res.json(historial)
   } catch (err) {
@@ -633,6 +677,7 @@ router.put('/:id/asignar', requireRole('soporte', 'admin'), (req, res) => {
     }
 
     const updated = stmtTicketById.get(id)
+    broadcast('ticket_actualizado', { id, asignado_a: asignado_a || null })
     return res.json(mapTicket(updated))
 
   } catch (err) {
@@ -678,6 +723,23 @@ router.post('/:id/notas', requireRole('soporte', 'admin'), (req, res) => {
   } catch (err) {
     console.error('Error crearNota:', err)
     res.status(500).json({ error: 'Error al crear nota interna' })
+  }
+})
+
+// ─── DELETE /api/tickets/:id (solo admin) ────────────────────────────────────
+router.delete('/:id', requireRole('admin'), (req, res) => {
+  try {
+    const { id } = req.params
+    const ticket = db.prepare('SELECT id, folio FROM tickets WHERE id = ?').get(id)
+    if (!ticket) return res.status(404).json({ error: 'Ticket no encontrado' })
+
+    db.prepare('DELETE FROM notificaciones WHERE ticket_id = ?').run(id)
+    db.prepare('DELETE FROM tickets WHERE id = ?').run(id)
+
+    return res.json({ ok: true, folio: ticket.folio })
+  } catch (err) {
+    console.error('Error deleteTicket:', err)
+    res.status(500).json({ error: 'Error al eliminar el ticket' })
   }
 })
 

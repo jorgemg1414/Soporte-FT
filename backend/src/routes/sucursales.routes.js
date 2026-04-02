@@ -1,14 +1,29 @@
 import { Router } from 'express'
 import bcrypt from 'bcrypt'
+import jwt from 'jsonwebtoken'
 import db, { genId } from '../lib/database.js'
 import { authenticate, requireRole } from '../middleware/auth.js'
 
 const router = Router()
 
-// ─── GET /api/sucursales (público — id, nombre, email, email_notificaciones) ─
-router.get('/', authenticate, (req, res) => {
+// ─── GET /api/sucursales ─────────────────────────────────────────────────────
+// Sin auth: solo id, nombre (para pantalla de login de encargadas)
+// Con auth admin/soporte: devuelve email y email_notificaciones también
+router.get('/', (req, res) => {
   try {
-    const sucursales = db.prepare('SELECT id, nombre, email, email_notificaciones FROM sucursales ORDER BY nombre').all()
+    let user = null
+    try {
+      const token = req.cookies?.token || req.headers.authorization?.replace('Bearer ', '')
+      if (token) user = jwt.verify(token, process.env.JWT_SECRET)
+    } catch { /* sin token o inválido — continúa sin auth */ }
+
+    if (user && (user.rol === 'admin' || user.rol === 'soporte')) {
+      const sucursales = db.prepare('SELECT id, nombre, email, email_notificaciones FROM sucursales ORDER BY nombre').all()
+      return res.json(sucursales)
+    }
+
+    // Sin auth o encargada: solo id y nombre
+    const sucursales = db.prepare('SELECT id, nombre FROM sucursales ORDER BY nombre').all()
     return res.json(sucursales)
   } catch (err) {
     console.error('Error getSucursales:', err)
@@ -38,7 +53,7 @@ router.post('/', authenticate, requireRole('admin'), (req, res) => {
 router.put('/password-todas', authenticate, requireRole('admin'), (req, res) => {
   try {
     const { password } = req.body
-    if (!password || password.length < 4) return res.status(400).json({ error: 'La contraseña debe tener al menos 4 caracteres' })
+    if (!password || password.length < 8) return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres' })
 
     const hashedPassword = bcrypt.hashSync(password, 10)
     const info = db.prepare('UPDATE sucursales SET password = ?').run(hashedPassword)
@@ -74,7 +89,7 @@ router.put('/:id/password', authenticate, requireRole('admin'), (req, res) => {
   try {
     const { id } = req.params
     const { password } = req.body
-    if (!password || password.length < 4) return res.status(400).json({ error: 'La contraseña debe tener al menos 4 caracteres' })
+    if (!password || password.length < 8) return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres' })
 
     const exists = db.prepare('SELECT id FROM sucursales WHERE id = ?').get(id)
     if (!exists) return res.status(404).json({ error: 'Sucursal no encontrada' })

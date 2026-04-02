@@ -49,8 +49,9 @@ export const useAuthStore = defineStore('auth', {
 
     async logout() {
       try { await api.post('/auth/logout') } catch { /* ignorar */ }
-      this.user    = null
-      this.profile = null
+      this.user        = null
+      this.profile     = null
+      this.initialized = false
     }
   }
 })

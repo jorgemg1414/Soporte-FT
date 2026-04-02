@@ -17,21 +17,42 @@
 
     <!-- Tarjetas de estadísticas -->
     <div class="row q-col-gutter-md q-mb-lg">
-      <div class="col-6 col-sm-4" v-for="card in statCards" :key="card.label">
-        <q-card bordered class="stat-card" :style="`border-top: 4px solid ${card.borderColor}`">
-          <q-card-section class="q-pa-md">
-            <div class="row items-center">
-              <div class="stat-icon-wrap q-mr-md" :style="`background: ${card.bgColor}`">
-                <q-icon :name="card.icon" :color="card.color" size="28px" />
+
+      <!-- Skeleton: primera carga -->
+      <template v-if="ticketsStore.loading && !ticketsStore.stats.total">
+        <div class="col-6 col-sm-4" v-for="i in 6" :key="i">
+          <q-card bordered class="stat-card">
+            <q-card-section class="q-pa-md">
+              <div class="row items-center">
+                <q-skeleton type="QAvatar" size="52px" class="q-mr-md" style="border-radius:12px" />
+                <div>
+                  <q-skeleton type="text" width="48px" height="36px" class="q-mb-xs" />
+                  <q-skeleton type="text" width="80px" />
+                </div>
               </div>
-              <div>
-                <div class="text-h4 text-weight-bold">{{ card.value }}</div>
-                <div class="text-caption text-grey-6">{{ card.label }}</div>
+            </q-card-section>
+          </q-card>
+        </div>
+      </template>
+
+      <template v-else>
+        <div class="col-6 col-sm-4" v-for="card in statCards" :key="card.label">
+          <q-card bordered class="stat-card" :style="`border-top: 4px solid ${card.borderColor}`">
+            <q-card-section class="q-pa-md">
+              <div class="row items-center">
+                <div class="stat-icon-wrap q-mr-md" :style="`background: ${card.bgColor}`">
+                  <q-icon :name="card.icon" :color="card.color" size="28px" />
+                </div>
+                <div>
+                  <div class="text-h4 text-weight-bold">{{ card.value }}</div>
+                  <div class="text-caption text-grey-6">{{ card.label }}</div>
+                </div>
               </div>
-            </div>
-          </q-card-section>
-        </q-card>
-      </div>
+            </q-card-section>
+          </q-card>
+        </div>
+      </template>
+
     </div>
 
     <!-- Gráfica de línea: tickets por día -->
@@ -43,7 +64,9 @@
             <div class="text-h6 text-weight-bold">Tickets — Últimos 14 días</div>
           </q-card-section>
           <q-card-section>
-            <apexchart type="area" height="200"
+            <q-skeleton v-if="ticketsStore.loading && !ticketsStore.stats.total"
+              height="200px" style="border-radius: 8px" />
+            <apexchart v-else type="area" height="200"
               :options="chartDia.options" :series="chartDia.series" />
           </q-card-section>
         </q-card>
@@ -286,8 +309,8 @@ const chartSucursal = computed(() => {
       theme: { mode: isDark.value ? 'dark' : 'light' },
       plotOptions: { bar: { horizontal: true, borderRadius: 4 } },
       colors: ['#1976D2'],
-      xaxis: { labels: { style: { colors: textColor.value } }, min: 0, forceNiceScale: true },
-      yaxis: { categories: sucs.map(s => s.nombre), labels: { style: { colors: textColor.value } } },
+      xaxis: { categories: sucs.map(s => s.nombre), labels: { style: { colors: textColor.value } } },
+      yaxis: { labels: { style: { colors: textColor.value } } },
       grid: { borderColor: gridColor.value },
       dataLabels: { enabled: false },
       tooltip: { theme: isDark.value ? 'dark' : 'light' }
@@ -305,8 +328,8 @@ const chartTecnico = computed(() => {
       theme: { mode: isDark.value ? 'dark' : 'light' },
       plotOptions: { bar: { horizontal: true, borderRadius: 4, distributed: true } },
       colors: ['#21BA45', '#1976D2', '#9C27B0', '#F2C037', '#C10015'],
-      xaxis: { labels: { style: { colors: textColor.value } }, min: 0, forceNiceScale: true },
-      yaxis: { categories: tecs.map(t => t.nombre), labels: { style: { colors: textColor.value } } },
+      xaxis: { categories: tecs.map(t => t.nombre), labels: { style: { colors: textColor.value } } },
+      yaxis: { labels: { style: { colors: textColor.value } } },
       grid: { borderColor: gridColor.value },
       legend: { show: false },
       dataLabels: { enabled: true, style: { colors: ['#fff'] } },

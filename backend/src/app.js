@@ -12,6 +12,8 @@ import notificacionesRoutes from './routes/notificaciones.routes.js'
 import sugerenciasRoutes from './routes/sugerencias.routes.js'
 import exportarRoutes from './routes/exportar.routes.js'
 import adjuntosRoutes from './routes/adjuntos.routes.js'
+import eventosRoutes from './routes/eventos.routes.js'
+import reglasAsignacionRoutes from './routes/reglas-asignacion.routes.js'
 
 const app = express()
 const allowedOrigins = process.env.CORS_ORIGINS?.split(',') || ['http://localhost:5173', 'http://localhost:4173']
@@ -60,8 +62,8 @@ const writeLimiter = rateLimit({
 })
 
 app.use('/api', (req, res, next) => {
-  // Excluir health y auth del rate limit general
-  if (req.path === '/health' || req.path.startsWith('/auth/')) return next()
+  // Excluir health, auth y eventos SSE del rate limit general
+  if (req.path === '/health' || req.path.startsWith('/auth/') || req.path.startsWith('/eventos')) return next()
   return generalLimiter(req, res, next)
 })
 app.use('/api/auth/login', loginLimiter)
@@ -82,6 +84,8 @@ app.use('/api/sugerencias', sugerenciasRoutes)
 app.use('/api/exportar', exportarRoutes)
 app.use('/api/adjuntos', adjuntosRoutes)
 
+app.use('/api/eventos', eventosRoutes)
+app.use('/api/reglas-asignacion', reglasAsignacionRoutes)
 app.get('/api/health', (_, res) => res.json({ ok: true }))
 
 export { app }

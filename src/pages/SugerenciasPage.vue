@@ -23,7 +23,9 @@
               <span class="text-grey-5 text-caption">{{ formatDate(s.created_at) }}</span>
             </q-item-label>
             <div style="white-space: pre-wrap" class="text-body2">{{ s.contenido }}</div>
-            <div v-if="s.respuesta" class="q-mt-sm q-pa-sm bg-green-1" style="border-radius: 8px; border-left: 3px solid #4CAF50">
+            <div v-if="s.respuesta" class="q-mt-sm q-pa-sm"
+              :class="$q.dark.isActive ? 'bg-green-10' : 'bg-green-1'"
+              style="border-radius: 8px; border-left: 3px solid #4CAF50">
               <div class="text-caption text-positive text-weight-bold">Respuesta del equipo:</div>
               <div class="text-body2" style="white-space: pre-wrap">{{ s.respuesta }}</div>
             </div>
@@ -69,7 +71,9 @@
       <q-card style="min-width: 420px">
         <q-card-section>
           <div class="text-h6">Responder Sugerencia</div>
-          <div class="text-body2 q-mt-sm" style="white-space: pre-wrap; background: #f5f5f5; padding: 8px; border-radius: 6px">
+          <div class="text-body2 q-mt-sm q-pa-sm"
+            :class="$q.dark.isActive ? 'bg-grey-9' : 'bg-grey-2'"
+            style="white-space: pre-wrap; border-radius: 6px">
             {{ sugerenciaActual?.contenido }}
           </div>
         </q-card-section>

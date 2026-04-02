@@ -18,16 +18,24 @@ const storage = multer.diskStorage({
   }
 })
 
+const ALLOWED_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.txt', '.csv'])
+const ALLOWED_MIMETYPES = new Set([
+  'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+  'application/pdf',
+  'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'text/plain', 'text/csv', 'application/csv'
+])
+
 const upload = multer({
   storage,
   limits: { fileSize: 10 * 1024 * 1024, files: 5 },
   fileFilter: (_, file, cb) => {
-    const allowed = /\.(jpg|jpeg|png|gif|webp|pdf|doc|docx|xls|xlsx|txt|csv)$/i
-    if (allowed.test(path.extname(file.originalname))) {
-      cb(null, true)
-    } else {
-      cb(new Error('Tipo de archivo no permitido'))
+    const ext = path.extname(file.originalname).toLowerCase()
+    if (!ALLOWED_EXTENSIONS.has(ext) || !ALLOWED_MIMETYPES.has(file.mimetype)) {
+      return cb(new Error('Tipo de archivo no permitido'))
     }
+    cb(null, true)
   }
 })
 
@@ -102,6 +110,8 @@ router.post('/comentario/:ticketId/:comentarioId', upload.array('files', 3), (re
 // ─── GET /api/adjuntos/ticket/:ticketId ───────────────────────────────────────
 router.get('/ticket/:ticketId', (req, res) => {
   try {
+    const accessErr = checkTicketAccess(req.params.ticketId, req.user)
+    if (accessErr) return res.status(accessErr.status).json({ error: accessErr.error })
     const rows = db.prepare('SELECT * FROM adjuntos WHERE ticket_id = ? ORDER BY created_at ASC').all(req.params.ticketId)
     return res.json(rows)
   } catch (err) {

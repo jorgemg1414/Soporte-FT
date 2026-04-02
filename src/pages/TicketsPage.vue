@@ -38,6 +38,14 @@
           <span class="text-caption text-grey-6 text-weight-medium">FILTROS</span>
           <q-badge v-if="filtrosActivos > 0" color="primary" class="q-ml-sm">{{ filtrosActivos }}</q-badge>
           <q-space />
+          <!-- Botón "Mis tickets" solo para admin/soporte -->
+          <q-btn v-if="authStore.profile?.rol !== 'encargada'"
+            flat dense size="sm" icon="person" class="q-mr-xs"
+            :color="filtros.tecnico === authStore.profile?.id ? 'primary' : 'grey-6'"
+            :label="filtros.tecnico === authStore.profile?.id ? 'Mis tickets ✓' : 'Mis tickets'"
+            @click="toggleMisTickets">
+            <q-tooltip>{{ filtros.tecnico === authStore.profile?.id ? 'Quitar filtro' : 'Ver solo mis tickets asignados' }}</q-tooltip>
+          </q-btn>
           <q-btn v-if="filtrosActivos > 0" flat dense size="sm" icon="clear_all" label="Limpiar" color="grey-6" @click="limpiarFiltros" />
         </div>
         <div class="row q-col-gutter-sm">
@@ -89,21 +97,46 @@
 
     <!-- Tabla -->
     <q-card bordered>
-      <q-table
+
+      <!-- Skeleton: primera carga (sin datos aún) -->
+      <template v-if="ticketsStore.loading && ticketsStore.tickets.length === 0">
+        <div class="q-pa-sm">
+          <div v-for="i in 9" :key="i"
+            class="row items-center no-wrap q-px-md q-py-sm q-gutter-md"
+            :style="i < 9 ? 'border-bottom: 1px solid rgba(128,128,128,0.15)' : ''">
+            <q-skeleton type="text" width="75px" />
+            <q-skeleton type="text" class="col" />
+            <q-skeleton type="text" width="100px" />
+            <q-skeleton type="text" width="80px" />
+            <q-skeleton type="QBadge" width="72px" height="24px" />
+            <q-skeleton type="QBadge" width="52px" height="24px" />
+            <q-skeleton type="text" width="88px" />
+          </div>
+        </div>
+      </template>
+
+      <q-table v-else
         :rows="ticketsFiltrados"
         :columns="columns"
         row-key="id"
         flat
-        :loading="ticketsStore.loading"
+        :loading="ticketsStore.loading && ticketsStore.tickets.length > 0"
         :rows-per-page-options="[10, 25, 50]"
         rows-per-page-label="Filas por página"
         no-data-label="No hay tickets que mostrar"
+        :row-class="rowClass"
         @row-click="(_, row) => $router.push(`/tickets/${row.id}`)"
         class="clickable-rows"
       >
         <template #body-cell-folio="props">
           <q-td :props="props">
-            <span class="text-primary text-weight-bold">{{ props.value }}</span>
+            <div class="row items-center no-wrap q-gutter-xs">
+              <span class="text-primary text-weight-bold">{{ props.value }}</span>
+              <q-badge v-if="props.row.asignado_a === authStore.profile?.id"
+                color="teal" style="font-size: 10px; padding: 2px 6px">
+                Mío
+              </q-badge>
+            </div>
           </q-td>
         </template>
         <template #body-cell-estado="props">
@@ -133,14 +166,17 @@
           <q-td :props="props">{{ formatDate(props.value) }}</q-td>
         </template>
       </q-table>
+
     </q-card>
   </q-page>
 </template>
 
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { useTicketsStore } from '../stores/tickets'
+import { useQuasar } from 'quasar'
 import api from '../lib/api'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -149,22 +185,49 @@ import { usePolling } from '../composables/usePolling'
 import { useSLA } from '../composables/useSLA'
 import { getEstadoColor, getEstadoLabel, getCategoryIcon, getCategoryLabel, formatDate } from '../composables/useTicketHelpers'
 
+const route = useRoute()
+const router = useRouter()
 const authStore = useAuthStore()
 const ticketsStore = useTicketsStore()
+const $q = useQuasar()
 const { slaLabel, slaBadgeColor, slaIcon } = useSLA()
 
 const FILTROS_KEY = 'tickets_filtros'
 const filtrosDefault = { busqueda: '', estado: null, categoria: null, sucursal: null, tecnico: null, urgente: false, fechaDesde: null, fechaHasta: null }
 
-const stored = localStorage.getItem(FILTROS_KEY)
-const filtros = ref(stored ? { ...filtrosDefault, ...JSON.parse(stored) } : { ...filtrosDefault })
+// Inicializar desde URL (prioridad) → localStorage → default
+let storedFiltros = {}
+try { storedFiltros = JSON.parse(localStorage.getItem(FILTROS_KEY) || '{}') } catch { /* ignorar JSON inválido */ }
+
+const queryFiltros = {}
+if (route.query.estado)     queryFiltros.estado     = route.query.estado
+if (route.query.categoria)  queryFiltros.categoria  = route.query.categoria
+if (route.query.sucursal)   queryFiltros.sucursal   = route.query.sucursal
+if (route.query.tecnico)    queryFiltros.tecnico    = route.query.tecnico
+if (route.query.urgente)    queryFiltros.urgente    = route.query.urgente === '1'
+if (route.query.fechaDesde) queryFiltros.fechaDesde = route.query.fechaDesde
+if (route.query.fechaHasta) queryFiltros.fechaHasta = route.query.fechaHasta
+
+const filtros = ref({ ...filtrosDefault, ...storedFiltros, ...queryFiltros })
 const sucursales = ref([])
 const tecnicos = ref([])
 const buscando = ref(false)
 const searchResults = ref([])
 let searchTimeout = null
 
-watch(filtros, v => localStorage.setItem(FILTROS_KEY, JSON.stringify(v)), { deep: true })
+// Sincronizar con localStorage y URL al cambiar filtros
+watch(filtros, v => {
+  localStorage.setItem(FILTROS_KEY, JSON.stringify(v))
+  const query = {}
+  if (v.estado)     query.estado     = v.estado
+  if (v.categoria)  query.categoria  = v.categoria
+  if (v.sucursal)   query.sucursal   = v.sucursal
+  if (v.tecnico)    query.tecnico    = v.tecnico
+  if (v.urgente)    query.urgente    = '1'
+  if (v.fechaDesde) query.fechaDesde = v.fechaDesde
+  if (v.fechaHasta) query.fechaHasta = v.fechaHasta
+  router.replace({ query })
+}, { deep: true })
 
 const estadoOptions = [
   { label: 'Abierto',    value: 'abierto' },
@@ -204,6 +267,12 @@ function limpiarFiltros() {
   filtros.value = { ...filtrosDefault }
 }
 
+function toggleMisTickets() {
+  filtros.value.tecnico = filtros.value.tecnico === authStore.profile?.id
+    ? null
+    : authStore.profile?.id
+}
+
 const ticketsFiltrados = computed(() => {
   // Si hay resultados de búsqueda FTS, usarlos como base
   let base = searchResults.value.length > 0 ? searchResults.value : ticketsStore.tickets
@@ -232,10 +301,10 @@ onMounted(async () => {
   if (authStore.profile?.rol !== 'encargada') {
     const [sucRes, tecRes] = await Promise.all([
       api.get('/sucursales'),
-      api.get('/usuarios')
+      api.get('/usuarios/tecnicos')
     ])
     sucursales.value = sucRes.data || []
-    tecnicos.value = (tecRes.data || []).filter(u => u.rol === 'soporte' || u.rol === 'admin')
+    tecnicos.value = tecRes.data || []
   }
 })
 
@@ -301,8 +370,13 @@ async function exportarPDF() {
     link.click()
     URL.revokeObjectURL(url)
   } catch {
-    // fallback silencioso
+    $q.notify({ type: 'negative', message: 'Error al generar el PDF' })
   }
+}
+
+function rowClass(row) {
+  if (row.asignado_a === authStore.profile?.id) return 'row-assigned-me'
+  return ''
 }
 
 function calcTiempoResolucion(t) {
@@ -318,6 +392,8 @@ function calcTiempoResolucion(t) {
 <style scoped>
 .clickable-rows :deep(tbody tr) { cursor: pointer; transition: background 0.15s; }
 .clickable-rows :deep(tbody tr:hover) { background: rgba(25, 118, 210, 0.06) !important; }
+.clickable-rows :deep(tr.row-assigned-me) { border-left: 3px solid #00897B; }
+.clickable-rows :deep(tr.row-assigned-me td:first-child) { padding-left: 9px; }
 .live-dot {
   width: 8px; height: 8px; border-radius: 50%;
   background: #69F0AE; display: inline-block;

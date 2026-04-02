@@ -132,6 +132,35 @@ db.exec(`
 // ─── Migraciones (columnas agregadas después del schema inicial) ──────────────
 try { db.prepare("ALTER TABLE sucursales ADD COLUMN email_notificaciones INTEGER DEFAULT 1").run() } catch { /* ya existe */ }
 
+// Reglas de asignación automática por categoría (soporta múltiples técnicos)
+try {
+  const cols = db.prepare("PRAGMA table_info(reglas_asignacion)").all()
+  if (cols.length === 0) {
+    // Tabla nueva
+    db.exec(`
+      CREATE TABLE reglas_asignacion (
+        categoria   TEXT PRIMARY KEY,
+        tecnico_ids TEXT NOT NULL DEFAULT '[]',
+        updated_at  TEXT DEFAULT (datetime('now'))
+      )
+    `)
+  } else if (cols.some(c => c.name === 'tecnico_id')) {
+    // Migrar de schema viejo (tecnico_id único) al nuevo (tecnico_ids JSON array)
+    const rows = db.prepare('SELECT categoria, tecnico_id FROM reglas_asignacion').all()
+    db.exec('DROP TABLE reglas_asignacion')
+    db.exec(`
+      CREATE TABLE reglas_asignacion (
+        categoria   TEXT PRIMARY KEY,
+        tecnico_ids TEXT NOT NULL DEFAULT '[]',
+        updated_at  TEXT DEFAULT (datetime('now'))
+      )
+    `)
+    const ins = db.prepare("INSERT INTO reglas_asignacion (categoria, tecnico_ids, updated_at) VALUES (?, ?, datetime('now'))")
+    for (const row of rows) ins.run(row.categoria, JSON.stringify([row.tecnico_id]))
+  }
+  // Si ya tiene tecnico_ids, no hacer nada
+} catch (e) { console.error('[DB] reglas_asignacion migration:', e.message) }
+
 // Tabla de adjuntos
 try { db.exec(`
   CREATE TABLE IF NOT EXISTS adjuntos (
