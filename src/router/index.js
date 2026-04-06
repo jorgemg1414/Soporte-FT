@@ -90,8 +90,8 @@ router.beforeEach(async (to) => {
     return true
   }
 
-  // Sin sesión → login de sistemas (el login de sucursales es público en /sucursal-select)
-  if (!authStore.user) return '/login'
+  // Sin sesión → página de selección de sucursal
+  if (!authStore.user) return '/sucursal-select'
 
   if (to.meta.roles && !to.meta.roles.includes(authStore.profile?.rol)) {
     const rol = authStore.profile?.rol
