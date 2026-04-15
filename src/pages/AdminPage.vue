@@ -39,7 +39,7 @@
               </q-td>
             </template>
             <template #body-cell-created_at="props">
-              <q-td :props="props">{{ new Date(props.value).toLocaleDateString('es-MX') }}</q-td>
+              <q-td :props="props">{{ props.value ? new Date(props.value).toLocaleDateString('es-MX') : '—' }}</q-td>
             </template>
             <template #body-cell-acciones="props">
               <q-td :props="props" class="text-center">
@@ -143,13 +143,13 @@
       <q-tab-panel name="asignacion" class="q-pa-none">
         <q-card bordered>
           <q-card-section>
-            <div class="text-h6">Asignación automática de técnicos</div>
+            <div class="text-h6">Notificación automática al equipo</div>
             <div class="text-caption text-grey-6 q-mb-md">
-              Cuando se cree un ticket de una categoría con regla, se asignará automáticamente al técnico seleccionado.
+              Cuando se cree un ticket de una categoría con regla, se notificará a todos los técnicos seleccionados a la vez. Cualquiera del equipo podrá tomarlo.
             </div>
             <q-banner class="bg-blue-1 text-blue-9 q-mb-md" rounded>
               <template #avatar><q-icon name="info" color="info" /></template>
-              Las reglas se aplican al momento de crear el ticket. Si no hay regla para una categoría, el ticket queda sin asignar.
+              El ticket queda sin asignar a un técnico específico — todos los del equipo reciben la notificación y el primero en tomarlo se lo queda.
             </q-banner>
             <div class="q-gutter-md">
               <q-card v-for="cat in categoriasAsignacion" :key="cat.value" flat bordered class="q-pa-md">
@@ -158,6 +158,10 @@
                   <div class="col">
                     <div class="text-subtitle2">{{ cat.label }}</div>
                     <div class="text-caption text-grey-6">{{ cat.descripcion }}</div>
+                    <div v-if="reglasMeta[cat.value]?.updated_by_nombre" class="text-caption text-grey-5 q-mt-xs">
+                      <q-icon name="edit" size="xs" class="q-mr-xs" />
+                      Última modificación: {{ reglasMeta[cat.value].updated_by_nombre }}<span v-if="reglasMeta[cat.value].updated_at"> · {{ fmtFecha(reglasMeta[cat.value].updated_at) }}</span>
+                    </div>
                   </div>
                   <div class="col-auto row items-center q-gutter-sm">
                     <q-select
@@ -313,10 +317,13 @@
             :rules="[val => !!val || 'Requerido', val => val.length >= 8 || 'Mínimo 8 caracteres']" />
           <q-select v-model="editUsuario.rol" outlined label="Rol *"
             :options="rolesOptions" emit-value map-options
-            :rules="[val => !!val || 'Selecciona un rol']" />
-          <q-select v-model="editUsuario.sucursal_id" outlined label="Sucursal"
+            :rules="[val => !!val || 'Selecciona un rol']"
+            @update:model-value="v => { if (v !== 'encargada') editUsuario.sucursal_id = null }" />
+          <q-select v-model="editUsuario.sucursal_id" outlined
+            :label="editUsuario.rol === 'encargada' ? 'Sucursal *' : 'Sucursal'"
             :options="sucursalesOptions" emit-value map-options clearable
-            hint="Solo aplica para el rol Encargado/a de Sucursal" />
+            :hint="editUsuario.rol === 'encargada' ? 'Requerida para Encargado/a' : 'Opcional para soporte/admin'"
+            :rules="editUsuario.rol === 'encargada' ? [val => !!val || 'La sucursal es requerida para encargadas'] : []" />
         </q-card-section>
         <q-card-actions align="right" class="q-pt-none">
           <q-btn flat label="Cancelar" v-close-popup />
@@ -363,8 +370,9 @@ const dialogCatalogo = ref(false)
 const editCatalogo = ref({ label: '', value: '', grupo: '', orden: 0, activo: true })
 
 const tiposCatalogo = [
-  { label: 'Tipos de documento',    value: 'tipos_documento' },
-  { label: 'Tipos de falla equipo', value: 'tipos_falla_equipo' }
+  { label: 'Tipos de documento',          value: 'tipos_documento' },
+  { label: 'Tipos de falla equipo',       value: 'tipos_falla_equipo' },
+  { label: 'Tipos cancelación portal',    value: 'tipos_cancelacion_portal' }
 ]
 
 const colsCatalogo = [
@@ -448,23 +456,41 @@ async function eliminarCatalogo(item) {
 }
 
 const rolesOptions = [
-  { label: 'Soporte Técnico', value: 'soporte' },
-  { label: 'Administrador',   value: 'admin' }
+  { label: 'Encargado/a de Sucursal', value: 'encargada' },
+  { label: 'Soporte Técnico',         value: 'soporte' },
+  { label: 'Administrador',           value: 'admin' }
 ]
 const sucursalesOptions = computed(() => sucursales.value.map(s => ({ label: s.nombre, value: s.id })))
 
+function fmtFecha(iso) {
+  if (!iso) return '—'
+  try { return new Date(iso).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' }) }
+  catch { return iso }
+}
+
 const colsSucursales = [
-  { name: 'nombre',     label: 'Nombre',  field: 'nombre',     align: 'left', sortable: true },
-  { name: 'email',      label: 'Correo',  field: 'email',      align: 'left' },
-  { name: 'created_at', label: 'Creada',  field: 'created_at', align: 'left' },
-  { name: 'acciones',   label: 'Acciones',field: 'id',         align: 'center' }
+  { name: 'nombre',         label: 'Nombre',        field: 'nombre',     align: 'left', sortable: true },
+  { name: 'email',          label: 'Correo',        field: 'email',      align: 'left' },
+  { name: 'last_login_at',  label: 'Último acceso', field: row => fmtFecha(row.last_login_at), align: 'left', sortable: true },
+  { name: 'pw_changed',     label: 'Contraseña actualizada',
+    field: row => row.password_changed_at
+      ? `${fmtFecha(row.password_changed_at)}${row.password_changed_by_nombre ? ' por ' + row.password_changed_by_nombre : ''}`
+      : '—',
+    align: 'left' },
+  { name: 'created_at',     label: 'Creada',        field: 'created_at', align: 'left' },
+  { name: 'acciones',       label: 'Acciones',      field: 'id',         align: 'center' }
 ]
 const colsUsuarios = [
-  { name: 'nombre',   label: 'Nombre',   field: 'nombre', align: 'left', sortable: true },
-  { name: 'email',    label: 'Usuario',  field: 'email',  align: 'left' },
-  { name: 'rol',      label: 'Rol',      field: 'rol',    align: 'center' },
-  { name: 'sucursal', label: 'Sucursal', field: 'id',     align: 'left' },
-  { name: 'acciones', label: 'Acciones', field: 'id',     align: 'center' }
+  { name: 'nombre',     label: 'Nombre',     field: 'nombre', align: 'left', sortable: true },
+  { name: 'email',      label: 'Usuario',    field: 'email',  align: 'left' },
+  { name: 'rol',        label: 'Rol',        field: 'rol',    align: 'center' },
+  { name: 'sucursal',   label: 'Sucursal',   field: row => row.sucursales?.nombre, align: 'left' },
+  { name: 'created_by', label: 'Creado por',
+    field: row => row.created_by_nombre
+      ? `${row.created_by_nombre}${row.created_at ? ' · ' + fmtFecha(row.created_at) : ''}`
+      : '—',
+    align: 'left' },
+  { name: 'acciones',   label: 'Acciones',   field: 'id',     align: 'center' }
 ]
 
 onMounted(async () => {
@@ -490,7 +516,7 @@ async function guardarSucursal() {
   if (!editSucursal.value.nombre.trim()) return
   guardando.value = true
   try {
-    const payload = { nombre: editSucursal.value.nombre.trim(), email: editSucursal.value.email?.trim() || '', email_notificaciones: editSucursal.value.email_notificaciones !== false }
+    const payload = { nombre: editSucursal.value.nombre.trim(), email: editSucursal.value.email?.trim() || '', email_notificaciones: !!editSucursal.value.email_notificaciones }
     if (editSucursal.value.id) {
       await api.put(`/sucursales/${editSucursal.value.id}`, payload)
     } else {
@@ -652,13 +678,15 @@ async function desbloquearIps() {
 
 // ─── ASIGNACIÓN AUTOMÁTICA ────────────────────────────────────────────────────
 const categoriasAsignacion = [
-  { value: 'cancelacion_documento', label: 'Cancelación de documento', descripcion: 'Errores en documentos de PvWin (notas, traspasos)', icon: 'description', color: 'blue' },
-  { value: 'falla_pvwin',           label: 'Falla PvWin',              descripcion: 'Problemas con el sistema PvWin',                      icon: 'computer',    color: 'purple' },
+  { value: 'cancelacion_documento', label: 'Cancelación de Documento PVWIN',  descripcion: 'Errores en documentos de PvWin (notas, traspasos)', icon: 'description', color: 'blue' },
+  { value: 'cancelacion_portal',    label: 'Cancelación de Documento Portal', descripcion: 'Cancelaciones del portal (canjeo de premios, servicios)', icon: 'language', color: 'deep-orange' },
+  { value: 'falla_pvwin',           label: 'Falla PvWin',                     descripcion: 'Problemas con el sistema PvWin',                      icon: 'computer',    color: 'purple' },
   { value: 'falla_computadora',     label: 'Falla de computadora',     descripcion: 'Hardware, sistema operativo, periféricos',            icon: 'desktop_windows', color: 'orange' },
   { value: 'otro',                  label: 'Otro',                     descripcion: 'Cualquier otro tipo de reporte',                      icon: 'help_outline', color: 'grey' }
 ]
 
 const reglasLocales   = ref({})
+const reglasMeta      = ref({})
 const cargandoReglas  = ref(false)
 const guardandoRegla  = ref(null)
 
@@ -673,8 +701,13 @@ async function loadReglas() {
   try {
     const { data } = await api.get('/reglas-asignacion')
     const mapa = {}
-    for (const r of data) mapa[r.categoria] = r.tecnico_ids || []
+    const meta = {}
+    for (const r of data) {
+      mapa[r.categoria] = r.tecnico_ids || []
+      meta[r.categoria] = { updated_at: r.updated_at, updated_by_nombre: r.updated_by_nombre }
+    }
     reglasLocales.value = mapa
+    reglasMeta.value = meta
   } catch {
     // sin reglas aún
   } finally {
@@ -687,10 +720,12 @@ async function guardarRegla(categoria) {
   const ids = reglasLocales.value[categoria] || []
   try {
     if (ids.length > 0) {
-      await api.put(`/reglas-asignacion/${categoria}`, { tecnico_ids: ids })
+      const { data } = await api.put(`/reglas-asignacion/${categoria}`, { tecnico_ids: ids })
+      reglasMeta.value = { ...reglasMeta.value, [categoria]: { updated_at: data.updated_at, updated_by_nombre: data.updated_by_nombre } }
       $q.notify({ type: 'positive', message: 'Regla guardada' })
     } else {
       await api.delete(`/reglas-asignacion/${categoria}`)
+      const m = { ...reglasMeta.value }; delete m[categoria]; reglasMeta.value = m
       $q.notify({ type: 'positive', message: 'Regla eliminada' })
     }
   } catch (e) {

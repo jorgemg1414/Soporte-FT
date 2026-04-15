@@ -3,6 +3,7 @@ import ExcelJS from 'exceljs'
 import PDFDocument from 'pdfkit'
 import db from '../lib/database.js'
 import { authenticate, requireRole } from '../middleware/auth.js'
+import { logAudit } from '../lib/audit.js'
 
 const router = Router()
 
@@ -15,17 +16,47 @@ const estadoLabels = {
 }
 
 const categoriaLabels = {
-  cancelacion_documento: 'Cancelación de documento',
+  cancelacion_documento: 'Cancelación de Documento PVWIN',
+  cancelacion_portal: 'Cancelación de Documento Portal',
   falla_pvwin: 'Falla PVWIN',
   falla_computadora: 'Falla de computadora',
   otro: 'Otro'
 }
 
-function getTicketsData() {
-  const tickets = db.prepare('SELECT * FROM tickets ORDER BY created_at DESC').all()
+function getTicketsData(filters = {}) {
+  let query = 'SELECT * FROM tickets WHERE 1=1'
+  const params = []
+
+  if (filters.estado) {
+    query += ' AND estado = ?'
+    params.push(filters.estado)
+  }
+  if (filters.categoria) {
+    query += ' AND categoria = ?'
+    params.push(filters.categoria)
+  }
+  if (filters.sucursal) {
+    query += ' AND sucursal_id = ?'
+    params.push(filters.sucursal)
+  }
+  if (filters.urgente === '1' || filters.urgente === 1) {
+    query += ' AND urgente = 1'
+  }
+
+  query += ' ORDER BY created_at DESC'
+  const tickets = db.prepare(query).all(...params)
+
   return tickets.map(t => {
     const suc = t.sucursal_id ? db.prepare('SELECT nombre FROM sucursales WHERE id = ?').get(t.sucursal_id) : null
-    const tecnico = t.asignado_a ? db.prepare('SELECT nombre FROM profiles WHERE id = ?').get(t.asignado_a) : null
+    let ids = []
+    try { ids = JSON.parse(t.asignados_ids || '[]') } catch {}
+    if (ids.length === 0 && t.asignado_a) ids = [t.asignado_a]
+    let nombres = '—'
+    if (ids.length > 0) {
+      const placeholders = ids.map(() => '?').join(',')
+      const profs = db.prepare(`SELECT nombre FROM profiles WHERE id IN (${placeholders})`).all(...ids)
+      if (profs.length > 0) nombres = profs.map(p => p.nombre).join(', ')
+    }
     return {
       folio: t.folio,
       titulo: t.titulo,
@@ -33,7 +64,7 @@ function getTicketsData() {
       estado: estadoLabels[t.estado] || t.estado,
       sucursal: suc?.nombre || '—',
       urgente: t.urgente ? 'Sí' : 'No',
-      asignado_a: tecnico?.nombre || '—',
+      asignado_a: nombres,
       created_at: t.created_at?.slice(0, 10) || '',
       updated_at: t.updated_at?.slice(0, 10) || ''
     }
@@ -55,7 +86,7 @@ const columns = [
 // ─── GET /api/exportar/excel ──────────────────────────────────────────────────
 router.get('/excel', (req, res) => {
   try {
-    const tickets = getTicketsData()
+    const tickets = getTicketsData(req.query)
     const workbook = new ExcelJS.Workbook()
     workbook.creator = 'Centro de Soporte'
     const sheet = workbook.addWorksheet('Tickets')
@@ -64,6 +95,7 @@ router.get('/excel', (req, res) => {
     sheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1976D2' } }
     tickets.forEach(t => sheet.addRow(t))
 
+    logAudit({ usuario_id: req.user.sub, usuario_nombre: req.user.nombre, accion: 'EXPORTAR_EXCEL', detalle: `Filtros: ${JSON.stringify(req.query)}`, ip: req.ip })
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
     res.setHeader('Content-Disposition', `attachment; filename=tickets_${new Date().toISOString().slice(0,10)}.xlsx`)
     workbook.xlsx.write(res).then(() => res.end())
@@ -77,9 +109,10 @@ router.get('/excel', (req, res) => {
 // ─── GET /api/exportar/pdf ────────────────────────────────────────────────────
 router.get('/pdf', (req, res) => {
   try {
-    const tickets = getTicketsData()
+    const tickets = getTicketsData(req.query)
     const doc = new PDFDocument({ margin: 30, size: 'LETTER', layout: 'landscape' })
 
+    logAudit({ usuario_id: req.user.sub, usuario_nombre: req.user.nombre, accion: 'EXPORTAR_PDF', detalle: `Filtros: ${JSON.stringify(req.query)}`, ip: req.ip })
     res.setHeader('Content-Type', 'application/pdf')
     res.setHeader('Content-Disposition', `attachment; filename=tickets_${new Date().toISOString().slice(0,10)}.pdf`)
     doc.pipe(res)

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url'
 import { mkdirSync, existsSync, unlinkSync } from 'fs'
 import db, { genId } from '../lib/database.js'
 import { authenticate } from '../middleware/auth.js'
+import { logAudit } from '../lib/audit.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const UPLOADS_DIR = path.join(__dirname, '..', '..', 'uploads')
@@ -112,7 +113,13 @@ router.get('/ticket/:ticketId', (req, res) => {
   try {
     const accessErr = checkTicketAccess(req.params.ticketId, req.user)
     if (accessErr) return res.status(accessErr.status).json({ error: accessErr.error })
-    const rows = db.prepare('SELECT * FROM adjuntos WHERE ticket_id = ? ORDER BY created_at ASC').all(req.params.ticketId)
+    const rows = db.prepare(`
+      SELECT a.*, p.nombre as usuario_nombre
+      FROM adjuntos a
+      LEFT JOIN profiles p ON a.usuario_id = p.id
+      WHERE a.ticket_id = ?
+      ORDER BY a.created_at ASC
+    `).all(req.params.ticketId)
     return res.json(rows)
   } catch (err) {
     console.error('Error getAdjuntos:', err)
@@ -130,7 +137,11 @@ router.get('/download/:id', (req, res) => {
       return res.status(403).json({ error: 'Sin permisos' })
     }
 
-    const filePath = path.join(UPLOADS_DIR, adj.filename)
+    const safeName = path.basename(adj.filename)
+    const filePath = path.resolve(UPLOADS_DIR, safeName)
+    if (!filePath.startsWith(path.resolve(UPLOADS_DIR) + path.sep)) {
+      return res.status(403).json({ error: 'Acceso denegado' })
+    }
     if (!existsSync(filePath)) return res.status(404).json({ error: 'Archivo no existe en disco' })
 
     res.setHeader('Content-Type', adj.mimetype)
@@ -153,10 +164,12 @@ router.delete('/:id', (req, res) => {
       return res.status(403).json({ error: 'Sin permisos' })
     }
 
-    const filePath = path.join(UPLOADS_DIR, adj.filename)
-    if (existsSync(filePath)) unlinkSync(filePath)
+    const safeName = path.basename(adj.filename)
+    const filePath = path.resolve(UPLOADS_DIR, safeName)
+    if (filePath.startsWith(path.resolve(UPLOADS_DIR) + path.sep) && existsSync(filePath)) unlinkSync(filePath)
 
     db.prepare('DELETE FROM adjuntos WHERE id = ?').run(req.params.id)
+    logAudit({ usuario_id: req.user.sub, usuario_nombre: req.user.nombre, accion: 'ELIMINAR_ADJUNTO', entidad: 'adjunto', entidad_id: req.params.id, detalle: `Archivo: ${adj.original_name} (ticket ${adj.ticket_id})`, ip: req.ip })
     return res.json({ ok: true })
   } catch (err) {
     console.error('Error deleteAdjunto:', err)

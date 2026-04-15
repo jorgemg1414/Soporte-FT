@@ -45,15 +45,16 @@
               :color="ticket.urgente ? 'grey-6' : 'negative'"
               :icon="ticket.urgente ? 'flag' : 'outlined_flag'"
               unelevated class="full-width q-mb-sm"
-              :loading="marcandoUrgente" @click="toggleUrgente"
+              :loading="marcandoUrgente" :disable="marcandoUrgente" @click="toggleUrgente"
               size="sm" />
 
             <q-separator class="q-my-sm" />
-            <div class="text-subtitle2 q-mb-xs">Asignar Técnico</div>
-            <q-select v-model="tecnicoSeleccionado" outlined dense
+            <div class="text-subtitle2 q-mb-xs">Técnicos asignados</div>
+            <q-select v-model="tecnicosSeleccionados" outlined dense
               :options="tecnicos" option-value="id" option-label="nombre"
-              emit-value map-options clearable label="Técnico asignado"
-              @update:model-value="asignarTecnico">
+              emit-value map-options multiple use-chips clearable
+              label="Técnicos asignados"
+              @update:model-value="asignarTecnicos">
               <template #prepend><q-icon name="engineering" /></template>
             </q-select>
           </q-card-section>
@@ -85,9 +86,50 @@
           <q-card-section>
             <div class="row items-center q-mb-md">
               <q-icon :name="getCategoryIcon(ticket.categoria)" color="primary" size="32px" class="q-mr-md" />
-              <div>
+              <div class="col">
                 <div class="text-h6">{{ getCategoryLabel(ticket.categoria) }}</div>
                 <div class="text-caption text-grey-6">Categoría del ticket</div>
+              </div>
+            </div>
+
+            <div v-if="ticket.asignados?.length || ticket.asignados_ids?.length" class="q-mb-md">
+              <div class="text-caption text-grey-6 q-mb-xs">
+                <q-icon name="engineering" size="14px" class="q-mr-xs" />Técnicos asignados
+              </div>
+              <div class="row q-gutter-xs">
+                <q-chip v-for="t in (ticket.asignados || [])" :key="t.id"
+                  color="info" text-color="white" dense icon="person">
+                  {{ t.nombre }}
+                </q-chip>
+              </div>
+              <div v-if="ticket.asignado_por?.nombre" class="text-caption text-grey-5 q-mt-xs">
+                Asignado por {{ ticket.asignado_por.nombre }}<span v-if="ticket.asignado_at"> · {{ formatDate(ticket.asignado_at) }}</span>
+              </div>
+            </div>
+
+            <div v-if="ticket.urgente && ticket.urgente_por?.nombre" class="q-mb-md">
+              <div class="text-caption text-negative">
+                <q-icon name="flag" size="14px" class="q-mr-xs" />
+                Marcado como urgente por {{ ticket.urgente_por.nombre }}<span v-if="ticket.urgente_at"> · {{ formatDate(ticket.urgente_at) }}</span>
+              </div>
+            </div>
+
+            <div v-if="ticket.resuelto_por?.nombre" class="q-mb-xs">
+              <div class="text-caption text-positive">
+                <q-icon name="check_circle" size="14px" class="q-mr-xs" />
+                Resuelto por {{ ticket.resuelto_por.nombre }}<span v-if="ticket.resuelto_at"> · {{ formatDate(ticket.resuelto_at) }}</span>
+              </div>
+            </div>
+            <div v-if="ticket.cerrado_por?.nombre" class="q-mb-xs">
+              <div class="text-caption text-grey-7">
+                <q-icon name="lock" size="14px" class="q-mr-xs" />
+                Cerrado por {{ ticket.cerrado_por.nombre }}<span v-if="ticket.cerrado_at"> · {{ formatDate(ticket.cerrado_at) }}</span>
+              </div>
+            </div>
+            <div v-if="ticket.reabierto_por?.nombre && ticket.estado === 'abierto'" class="q-mb-xs">
+              <div class="text-caption text-warning">
+                <q-icon name="lock_open" size="14px" class="q-mr-xs" />
+                Reabierto por {{ ticket.reabierto_por.nombre }}<span v-if="ticket.reabierto_at"> · {{ formatDate(ticket.reabierto_at) }}</span>
               </div>
             </div>
 
@@ -108,6 +150,19 @@
                 <div class="col-12 col-sm-4" v-if="ticket.folio_correcto">
                   <div class="text-caption text-grey-6">Folio correcto</div>
                   <div class="text-positive text-body1 text-weight-bold">{{ ticket.folio_correcto }}</div>
+                </div>
+              </div>
+            </template>
+
+            <template v-if="ticket.categoria === 'cancelacion_portal'">
+              <div class="row q-col-gutter-md q-mb-md">
+                <div class="col-12 col-sm-4">
+                  <div class="text-caption text-grey-6">Tipo de cancelación</div>
+                  <div class="text-body1 text-weight-medium">{{ getTipoDocLabel(ticket.tipo_documento) }}</div>
+                </div>
+                <div class="col-12 col-sm-4">
+                  <div class="text-caption text-grey-6">Folio a cancelar</div>
+                  <div class="text-negative text-body1 text-weight-bold">{{ ticket.folio_pvwin || '—' }}</div>
                 </div>
               </div>
             </template>
@@ -135,7 +190,7 @@
             <template v-if="ticket.descripcion">
               <q-separator class="q-my-md" />
               <div class="text-caption text-grey-6">
-                {{ ticket.categoria === 'cancelacion_documento' ? 'Motivo de la cancelación' : 'Observaciones adicionales' }}
+                {{ (ticket.categoria === 'cancelacion_documento' || ticket.categoria === 'cancelacion_portal') ? 'Motivo de la cancelación' : 'Observaciones adicionales' }}
               </div>
               <div class="text-body1 q-mt-xs" style="white-space: pre-wrap">{{ ticket.descripcion }}</div>
             </template>
@@ -281,7 +336,7 @@ const comentarios = ref([])
 const historial = ref([])
 const notasInternas = ref([])
 const tecnicos = ref([])
-const tecnicoSeleccionado = ref(null)
+const tecnicosSeleccionados = ref([])
 const nuevoComentario = ref('')
 const nuevaNota = ref('')
 const enviando = ref(false)
@@ -338,7 +393,9 @@ async function loadAll() {
   if (esSoporte) {
     notasInternas.value = results[3].data || []
     tecnicos.value = results[4].data || []
-    tecnicoSeleccionado.value = ticket.value.asignado_a || null
+    tecnicosSeleccionados.value = ticket.value.asignados_ids?.length
+      ? [...ticket.value.asignados_ids]
+      : (ticket.value.asignado_a ? [ticket.value.asignado_a] : [])
   }
 
   // Buscar tickets relacionados (solo si el ticket sigue abierto)
@@ -387,13 +444,14 @@ async function enviarNota() {
   }
 }
 
-async function asignarTecnico(tecnicoId) {
+async function asignarTecnicos(ids) {
   try {
-    await api.put(`/tickets/${route.params.id}/asignar`, { asignado_a: tecnicoId })
+    const arr = Array.isArray(ids) ? ids : (ids ? [ids] : [])
+    await api.put(`/tickets/${route.params.id}/asignar`, { asignados_ids: arr })
     await loadAll()
-    $q.notify({ type: 'positive', message: tecnicoId ? 'Técnico asignado' : 'Asignación removida' })
+    $q.notify({ type: 'positive', message: arr.length > 0 ? 'Técnicos asignados' : 'Asignación removida' })
   } catch {
-    $q.notify({ type: 'negative', message: 'Error al asignar técnico' })
+    $q.notify({ type: 'negative', message: 'Error al asignar técnicos' })
   }
 }
 

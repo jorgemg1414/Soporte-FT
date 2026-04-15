@@ -26,8 +26,15 @@
             <div v-if="s.respuesta" class="q-mt-sm q-pa-sm"
               :class="$q.dark.isActive ? 'bg-green-10' : 'bg-green-1'"
               style="border-radius: 8px; border-left: 3px solid #4CAF50">
-              <div class="text-caption text-positive text-weight-bold">Respuesta del equipo:</div>
-              <div class="text-body2" style="white-space: pre-wrap">{{ s.respuesta }}</div>
+              <div class="row items-center q-gutter-xs">
+                <div class="text-caption text-positive text-weight-bold">Respuesta del equipo:</div>
+                <q-space />
+                <div v-if="s.respondida_por_nombre" class="text-caption text-grey-7">
+                  <q-icon name="person" size="xs" class="q-mr-xs" />{{ s.respondida_por_nombre }}
+                  <span v-if="s.respondida_at"> · {{ formatDate(s.respondida_at) }}</span>
+                </div>
+              </div>
+              <div class="text-body2 q-mt-xs" style="white-space: pre-wrap">{{ s.respuesta }}</div>
             </div>
           </q-item-section>
           <q-item-section side v-if="esSoporte">

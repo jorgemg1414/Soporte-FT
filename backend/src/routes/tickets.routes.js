@@ -1,6 +1,12 @@
 import { Router } from 'express'
+import { existsSync, unlinkSync } from 'fs'
+import path from 'path'
+import { fileURLToPath } from 'url'
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const UPLOADS_DIR = path.resolve(__dirname, '..', '..', 'uploads')
 import db, { generateFolio, genId } from '../lib/database.js'
 import { authenticate, requireRole } from '../middleware/auth.js'
+import { logAudit } from '../lib/audit.js'
 import { crearNotificacion } from './notificaciones.routes.js'
 import { notificarCambioEstado, notificarComentario, notificarAsignacion, notificarNuevoTicket } from '../lib/mailer.js'
 import { broadcast } from '../lib/broadcaster.js'
@@ -16,12 +22,25 @@ const TICKET_SELECT = `
   SELECT t.*,
     s.nombre as _sucursal_nombre,
     p.nombre as _usuario_nombre, p.rol as _usuario_rol,
-    r.nombre as _resuelto_por_nombre
+    r.nombre as _resuelto_por_nombre,
+    c.nombre as _cerrado_por_nombre,
+    re.nombre as _reabierto_por_nombre,
+    u.nombre as _urgente_por_nombre,
+    ap.nombre as _asignado_por_nombre
   FROM tickets t
   LEFT JOIN sucursales s ON t.sucursal_id = s.id
   LEFT JOIN profiles p ON t.usuario_id = p.id
   LEFT JOIN profiles r ON t.resuelto_por_id = r.id
+  LEFT JOIN profiles c ON t.cerrado_por_id = c.id
+  LEFT JOIN profiles re ON t.reabierto_por_id = re.id
+  LEFT JOIN profiles u ON t.urgente_por_id = u.id
+  LEFT JOIN profiles ap ON t.asignado_por_id = ap.id
 `
+
+function parseAsignados(raw) {
+  try { const arr = JSON.parse(raw || '[]'); return Array.isArray(arr) ? arr.filter(Boolean) : [] }
+  catch { return [] }
+}
 
 function mapTicket(row) {
   if (!row) return null
@@ -32,13 +51,41 @@ function mapTicket(row) {
     descripcion: row.descripcion, detalle_falla: row.detalle_falla,
     tipo_falla: row.tipo_falla, tipo_traspaso: row.tipo_traspaso,
     estado: row.estado, sucursal_id: row.sucursal_id, usuario_id: row.usuario_id,
-    asignado_a: row.asignado_a, resuelto_por_id: row.resuelto_por_id,
+    asignado_a: row.asignado_a,
+    asignados_ids: parseAsignados(row.asignados_ids),
+    resuelto_por_id: row.resuelto_por_id,
     resuelto_at: row.resuelto_at, adjuntos: JSON.parse(row.adjuntos || '[]'),
+    cerrado_por_id: row.cerrado_por_id, cerrado_at: row.cerrado_at,
+    reabierto_por_id: row.reabierto_por_id, reabierto_at: row.reabierto_at,
+    urgente_por_id: row.urgente_por_id, urgente_at: row.urgente_at,
+    asignado_por_id: row.asignado_por_id, asignado_at: row.asignado_at,
     created_at: row.created_at, updated_at: row.updated_at,
     sucursales: row._sucursal_nombre ? { id: row.sucursal_id, nombre: row._sucursal_nombre } : null,
     profiles: row._usuario_nombre ? { id: row.usuario_id, nombre: row._usuario_nombre, rol: row._usuario_rol } : null,
-    resuelto_por: row._resuelto_por_nombre ? { id: row.resuelto_por_id, nombre: row._resuelto_por_nombre } : null
+    resuelto_por: row._resuelto_por_nombre ? { id: row.resuelto_por_id, nombre: row._resuelto_por_nombre } : null,
+    cerrado_por: row._cerrado_por_nombre ? { id: row.cerrado_por_id, nombre: row._cerrado_por_nombre } : null,
+    reabierto_por: row._reabierto_por_nombre ? { id: row.reabierto_por_id, nombre: row._reabierto_por_nombre } : null,
+    urgente_por: row._urgente_por_nombre ? { id: row.urgente_por_id, nombre: row._urgente_por_nombre } : null,
+    asignado_por: row._asignado_por_nombre ? { id: row.asignado_por_id, nombre: row._asignado_por_nombre } : null
   }
+}
+
+// Enriquece una lista de tickets con los nombres/rol de los técnicos asignados
+function enrichAsignados(tickets) {
+  const allIds = new Set()
+  tickets.forEach(t => t.asignados_ids?.forEach(id => allIds.add(id)))
+  if (allIds.size === 0) {
+    tickets.forEach(t => { t.asignados = [] })
+    return tickets
+  }
+  const idArr = [...allIds]
+  const placeholders = idArr.map(() => '?').join(',')
+  const profs = db.prepare(`SELECT id, nombre, rol FROM profiles WHERE id IN (${placeholders})`).all(...idArr)
+  const profMap = new Map(profs.map(p => [p.id, p]))
+  tickets.forEach(t => {
+    t.asignados = (t.asignados_ids || []).map(id => profMap.get(id)).filter(Boolean)
+  })
+  return tickets
 }
 
 // Prepared statements
@@ -108,7 +155,7 @@ router.get('/', (req, res) => {
 
       const total = countRow.total
       return res.json({
-        data: rows.map(mapTicket),
+        data: enrichAsignados(rows.map(mapTicket)),
         total,
         page,
         limit,
@@ -123,7 +170,7 @@ router.get('/', (req, res) => {
     } else {
       rows = stmtTicketsAll.all(500, 0)
     }
-    return res.json(rows.map(mapTicket))
+    return res.json(enrichAsignados(rows.map(mapTicket)))
 
   } catch (err) {
     console.error('Error fetchTickets:', err)
@@ -224,7 +271,7 @@ router.get('/stats', (req, res) => {
     return res.json({
       total: totalRow.total,
       ...estados,
-      tickets_urgentes: urgentesRow[0]?.total || 0,
+      tickets_urgentes: urgentesRow.total || 0,
       tiempo_promedio_horas,
       sla_violations: slaViolations.total,
       por_categoria: porCategoria,
@@ -244,7 +291,7 @@ const TICKET_ALLOWED_FIELDS = [
   'titulo', 'categoria', 'descripcion', 'tipo_documento', 'folio_pvwin',
   'folio_correcto', 'detalle_falla', 'tipo_falla', 'tipo_traspaso'
 ]
-const CATEGORIAS_VALIDAS = ['cancelacion_documento', 'falla_pvwin', 'falla_computadora', 'otro']
+const CATEGORIAS_VALIDAS = ['cancelacion_documento', 'cancelacion_portal', 'falla_pvwin', 'falla_computadora', 'otro']
 const MAX_TEXT_LENGTH = 300
 
 function sanitizeTicketData(body) {
@@ -274,50 +321,54 @@ router.post('/', requireRole('encargada', 'admin'), (req, res) => {
     const now   = new Date().toISOString()
     const newId = genId()
 
-    db.prepare(`INSERT INTO tickets
-      (id, folio, urgente, titulo, categoria, tipo_documento, folio_pvwin, folio_correcto,
-       descripcion, detalle_falla, tipo_falla, tipo_traspaso,
-       estado, sucursal_id, usuario_id, asignado_a, adjuntos, created_at, updated_at)
-      VALUES (?,?,0,?,?,?,?,?,?,?,?,?,'abierto',?,?,null,'[]',?,?)`
-    ).run(
-      newId, folio,
-      ticketData.titulo || '', ticketData.categoria,
-      ticketData.tipo_documento || null, ticketData.folio_pvwin || null, ticketData.folio_correcto || null,
-      ticketData.descripcion || '', ticketData.detalle_falla || null, ticketData.tipo_falla || null,
-      ticketData.tipo_traspaso || null,
-      req.user.sucursal_id, req.user.sub,
-      now, now
-    )
+    db.transaction(() => {
+      db.prepare(`INSERT INTO tickets
+        (id, folio, urgente, titulo, categoria, tipo_documento, folio_pvwin, folio_correcto,
+         descripcion, detalle_falla, tipo_falla, tipo_traspaso,
+         estado, sucursal_id, usuario_id, asignado_a, adjuntos, created_at, updated_at)
+        VALUES (?,?,0,?,?,?,?,?,?,?,?,?,'abierto',?,?,null,'[]',?,?)`
+      ).run(
+        newId, folio,
+        ticketData.titulo || '', ticketData.categoria,
+        ticketData.tipo_documento || null, ticketData.folio_pvwin || null, ticketData.folio_correcto || null,
+        ticketData.descripcion || '', ticketData.detalle_falla || null, ticketData.tipo_falla || null,
+        ticketData.tipo_traspaso || null,
+        req.user.sucursal_id, req.user.sub,
+        now, now
+      )
 
-    db.prepare('INSERT INTO historial_tickets (id, ticket_id, usuario_id, accion, detalle, created_at) VALUES (?,?,?,?,?,?)')
-      .run(genId(), newId, req.user.sub, 'Ticket creado', `Reporte ${folio} creado por ${req.user.nombre}`, now)
+      db.prepare('INSERT INTO historial_tickets (id, ticket_id, usuario_id, accion, detalle, created_at) VALUES (?,?,?,?,?,?)')
+        .run(genId(), newId, req.user.sub, 'Ticket creado', `Reporte ${folio} creado por ${req.user.nombre}`, now)
 
-    // Auto-asignación por categoría (balance de carga entre técnicos configurados)
-    const regla = db.prepare('SELECT tecnico_ids FROM reglas_asignacion WHERE categoria = ?').get(ticketData.categoria)
-    if (regla) {
-      const ids = JSON.parse(regla.tecnico_ids || '[]')
-      if (ids.length > 0) {
-        // Elegir el técnico con menos tickets abiertos/en_proceso
-        const placeholders = ids.map(() => '?').join(',')
-        const cargas = db.prepare(`
-          SELECT p.id, p.nombre, COUNT(t.id) as carga
-          FROM profiles p
-          LEFT JOIN tickets t ON t.asignado_a = p.id AND t.estado IN ('abierto','en_proceso')
-          WHERE p.id IN (${placeholders})
-          GROUP BY p.id
-          ORDER BY carga ASC
-          LIMIT 1
-        `).get(...ids)
+      const regla = db.prepare('SELECT tecnico_ids FROM reglas_asignacion WHERE categoria = ?').get(ticketData.categoria)
+      if (regla) {
+        const ids = JSON.parse(regla.tecnico_ids || '[]')
+        if (ids.length > 0) {
+          const placeholders = ids.map(() => '?').join(',')
+          const tecnicos = db.prepare(`SELECT id, nombre FROM profiles WHERE id IN (${placeholders})`).all(...ids)
 
-        if (cargas) {
-          db.prepare('UPDATE tickets SET asignado_a = ?, updated_at = ? WHERE id = ?').run(cargas.id, now, newId)
-          db.prepare('INSERT INTO historial_tickets (id, ticket_id, usuario_id, accion, detalle, created_at) VALUES (?,?,?,?,?,?)')
-            .run(genId(), newId, req.user.sub, 'Asignación automática', `Asignado a ${cargas.nombre} por regla de categoría (${cargas.carga} tickets activos)`, now)
+          if (tecnicos.length > 0) {
+            const tecIds = tecnicos.map(t => t.id)
+            db.prepare('UPDATE tickets SET asignado_a = ?, asignados_ids = ?, updated_at = ? WHERE id = ?')
+              .run(tecIds[0], JSON.stringify(tecIds), now, newId)
+
+            for (const tec of tecnicos) {
+              crearNotificacion({
+                usuario_id: tec.id,
+                ticket_id: newId,
+                mensaje: `Te asignaron el ticket ${folio}`,
+                tipo: 'asignacion'
+              })
+            }
+
+            db.prepare('INSERT INTO historial_tickets (id, ticket_id, usuario_id, accion, detalle, created_at) VALUES (?,?,?,?,?,?)')
+              .run(genId(), newId, req.user.sub, 'Asignación automática',
+                   `Asignado a ${tecnicos.length} técnico(s): ${tecnicos.map(t => t.nombre).join(', ')}`, now)
+          }
         }
       }
-    }
+    })()
 
-    // Notificar al equipo de sistemas
     const suc = db.prepare('SELECT nombre FROM sucursales WHERE id = ?').get(req.user.sucursal_id)
     notificarNuevoTicket({
       folio,
@@ -372,7 +423,7 @@ router.get('/search', (req, res) => {
       `).all(ftsQuery, limit)
     }
 
-    return res.json(rows.map(mapTicket))
+    return res.json(enrichAsignados(rows.map(mapTicket)))
 
   } catch (err) {
     // Fallback LIKE si FTS falla
@@ -385,7 +436,7 @@ router.get('/search', (req, res) => {
         WHERE t.titulo LIKE ? OR t.descripcion LIKE ? OR t.folio LIKE ?
         ORDER BY t.created_at DESC LIMIT ?
       `).all(like, like, like, limit)
-      return res.json(rows.map(mapTicket))
+      return res.json(enrichAsignados(rows.map(mapTicket)))
     } catch (e) {
       console.error('Error search:', e)
       res.status(500).json({ error: 'Error en la búsqueda' })
@@ -402,7 +453,10 @@ router.post('/check-duplicados', (req, res) => {
     const texto = `${titulo} ${descripcion || ''}`.trim()
     if (texto.length < 5) return res.json({ duplicados: [] })
 
-    const sid = sucursal_id || req.user.sucursal_id
+    // Encargadas solo pueden buscar duplicados en su propia sucursal
+    const sid = req.user.rol === 'encargada'
+      ? req.user.sucursal_id
+      : (sucursal_id || req.user.sucursal_id)
     const palabras = texto.toLowerCase().split(/\s+/).filter(w => w.length >= 3).slice(0, 5)
     if (palabras.length === 0) return res.json({ duplicados: [] })
 
@@ -413,7 +467,7 @@ router.post('/check-duplicados', (req, res) => {
       SELECT t.id, t.folio, t.titulo, t.categoria, t.estado, t.created_at, s.nombre as sucursal_nombre
       FROM tickets t LEFT JOIN sucursales s ON t.sucursal_id = s.id
       WHERE t.estado IN ('abierto', 'en_proceso') AND t.sucursal_id = ?
-        AND (${conditions.join(' AND ')})
+        AND (${conditions.join(' OR ')})
       ORDER BY t.created_at DESC LIMIT 5
     `).all(sid, ...params)
 
@@ -438,7 +492,7 @@ router.get('/:id', (req, res) => {
       return res.status(403).json({ error: 'Sin permisos' })
     }
 
-    return res.json(mapTicket(ticket))
+    return res.json(enrichAsignados([mapTicket(ticket)])[0])
 
   } catch (err) {
     console.error('Error getTicket:', err)
@@ -465,25 +519,41 @@ router.put('/:id/estado', requireRole('soporte', 'admin'), (req, res) => {
     const now = new Date().toISOString()
     let resuelto_por_id = ticket.resuelto_por_id
     let resuelto_at = ticket.resuelto_at
+    let cerrado_por_id = ticket.cerrado_por_id
+    let cerrado_at = ticket.cerrado_at
+    let reabierto_por_id = ticket.reabierto_por_id
+    let reabierto_at = ticket.reabierto_at
 
     if (estado === 'resuelto') {
-      // Solo asignar resuelto_por si el ticket no fue ya resuelto por alguien
       if (!ticket.resuelto_por_id) {
         resuelto_por_id = req.user.sub
         resuelto_at = now
       }
-      // Si ya fue resuelto, mantener el resuelto_por original
+    }
+    if (estado === 'cerrado') {
+      cerrado_por_id = req.user.sub
+      cerrado_at = now
     }
     if (estado === 'abierto') {
+      // Si venía de un estado terminal, registrar reapertura
+      if (ticket.estado === 'resuelto' || ticket.estado === 'cerrado') {
+        reabierto_por_id = req.user.sub
+        reabierto_at = now
+      }
       resuelto_por_id = null
       resuelto_at = null
+      cerrado_por_id = null
+      cerrado_at = null
     }
 
     // Al resolver, quitar urgencia automáticamente
     const urgente = estado === 'resuelto' ? 0 : ticket.urgente
 
-    db.prepare('UPDATE tickets SET estado=?, updated_at=?, resuelto_por_id=?, resuelto_at=?, urgente=? WHERE id=?')
-      .run(estado, now, resuelto_por_id, resuelto_at, urgente, id)
+    db.prepare(`UPDATE tickets SET estado=?, updated_at=?, resuelto_por_id=?, resuelto_at=?,
+                cerrado_por_id=?, cerrado_at=?, reabierto_por_id=?, reabierto_at=?, urgente=?
+                WHERE id=?`)
+      .run(estado, now, resuelto_por_id, resuelto_at,
+           cerrado_por_id, cerrado_at, reabierto_por_id, reabierto_at, urgente, id)
 
     db.prepare('INSERT INTO historial_tickets (id, ticket_id, usuario_id, accion, detalle, created_at) VALUES (?,?,?,?,?,?)')
       .run(genId(), id, req.user.sub, 'Estado actualizado', `Estado cambiado a: ${estadoLabels[estado]}`, now)
@@ -524,13 +594,20 @@ router.put('/:id/estado', requireRole('soporte', 'admin'), (req, res) => {
 router.put('/:id/urgente', requireRole('soporte', 'admin'), (req, res) => {
   try {
     const { id } = req.params
-    const { urgente } = req.body
+    let { urgente } = req.body
 
     const ticket = db.prepare('SELECT * FROM tickets WHERE id = ?').get(id)
     if (!ticket) return res.status(404).json({ error: 'Ticket no encontrado' })
 
+    if (typeof urgente !== 'boolean') {
+      urgente = urgente === true || urgente === 'true' || urgente === 1 || urgente === '1'
+    }
+
     const now = new Date().toISOString()
-    db.prepare('UPDATE tickets SET urgente=?, updated_at=? WHERE id=?').run(urgente ? 1 : 0, now, id)
+    const urgentePorId = urgente ? req.user.sub : null
+    const urgenteAt = urgente ? now : null
+    db.prepare('UPDATE tickets SET urgente=?, urgente_por_id=?, urgente_at=?, updated_at=? WHERE id=?')
+      .run(urgente ? 1 : 0, urgentePorId, urgenteAt, now, id)
 
     db.prepare('INSERT INTO historial_tickets (id, ticket_id, usuario_id, accion, detalle, created_at) VALUES (?,?,?,?,?,?)')
       .run(genId(), id, req.user.sub,
@@ -588,11 +665,14 @@ router.post('/:id/comentarios', (req, res) => {
     db.prepare('INSERT INTO comentarios (id, ticket_id, usuario_id, contenido, created_at) VALUES (?,?,?,?,?)')
       .run(newId, id, req.user.sub, contenido.trim(), now)
 
-    // Notificar al creador del ticket y al técnico asignado
+    // Notificar al creador del ticket y a todos los técnicos asignados
     const ticketObj = db.prepare('SELECT * FROM tickets WHERE id = ?').get(id)
     if (ticketObj) {
       const destinatarios = new Set()
       if (ticketObj.usuario_id && ticketObj.usuario_id !== req.user.sub) destinatarios.add(ticketObj.usuario_id)
+      for (const tid of parseAsignados(ticketObj.asignados_ids)) {
+        if (tid && tid !== req.user.sub) destinatarios.add(tid)
+      }
       if (ticketObj.asignado_a && ticketObj.asignado_a !== req.user.sub) destinatarios.add(ticketObj.asignado_a)
       for (const uid of destinatarios) {
         crearNotificacion({
@@ -639,46 +719,64 @@ router.get('/:id/historial', (req, res) => {
 })
 
 // ─── PUT /api/tickets/:id/asignar ─────────────────────────────────────────────
+// Acepta `asignados_ids` (array, preferido) o `asignado_a` (legacy, single)
 router.put('/:id/asignar', requireRole('soporte', 'admin'), (req, res) => {
   try {
     const { id } = req.params
-    const { asignado_a } = req.body
+    let { asignados_ids, asignado_a } = req.body
+
+    // Normalizar entrada: acepta ambos formatos
+    let ids = []
+    if (Array.isArray(asignados_ids)) {
+      ids = asignados_ids.filter(Boolean)
+    } else if (asignado_a) {
+      ids = [asignado_a]
+    }
 
     const ticket = db.prepare('SELECT * FROM tickets WHERE id = ?').get(id)
     if (!ticket) return res.status(404).json({ error: 'Ticket no encontrado' })
 
     const now = new Date().toISOString()
-    const tecnico = asignado_a ? db.prepare('SELECT nombre FROM profiles WHERE id = ?').get(asignado_a) : null
 
-    db.prepare('UPDATE tickets SET asignado_a=?, updated_at=? WHERE id=?').run(asignado_a || null, now, id)
+    // Obtener nombres de los técnicos seleccionados
+    let tecnicos = []
+    if (ids.length > 0) {
+      const placeholders = ids.map(() => '?').join(',')
+      tecnicos = db.prepare(`SELECT id, nombre, email FROM profiles WHERE id IN (${placeholders})`).all(...ids)
+    }
+
+    const primero = tecnicos[0]?.id || null
+    const asignadoPorId = tecnicos.length > 0 ? req.user.sub : null
+    const asignadoAt = tecnicos.length > 0 ? now : null
+    db.prepare('UPDATE tickets SET asignado_a=?, asignados_ids=?, asignado_por_id=?, asignado_at=?, updated_at=? WHERE id=?')
+      .run(primero, JSON.stringify(tecnicos.map(t => t.id)), asignadoPorId, asignadoAt, now, id)
 
     db.prepare('INSERT INTO historial_tickets (id, ticket_id, usuario_id, accion, detalle, created_at) VALUES (?,?,?,?,?,?)')
       .run(genId(), id, req.user.sub,
-        asignado_a ? 'Técnico asignado' : 'Asignación removida',
-        asignado_a
-          ? `Asignado a ${tecnico?.nombre || 'desconocido'} por ${req.user.nombre}`
+        tecnicos.length > 0 ? 'Técnicos asignados' : 'Asignación removida',
+        tecnicos.length > 0
+          ? `Asignado a ${tecnicos.map(t => t.nombre).join(', ')} por ${req.user.nombre}`
           : `Asignación removida por ${req.user.nombre}`,
         now)
 
-    if (asignado_a && asignado_a !== req.user.sub) {
+    // Notificar y enviar email a cada técnico (excepto al propio usuario que asigna)
+    const sucNombre = db.prepare('SELECT nombre FROM sucursales WHERE id = ?').get(ticket.sucursal_id)?.nombre || ''
+    for (const tec of tecnicos) {
+      if (tec.id === req.user.sub) continue
       crearNotificacion({
-        usuario_id: asignado_a,
+        usuario_id: tec.id,
         ticket_id: id,
         mensaje: `Te asignaron el ticket ${ticket.folio}: ${ticket.titulo}`,
         tipo: 'asignacion'
       })
-
-      // Email al técnico asignado
-      const tecnicoPerfil = db.prepare('SELECT email FROM profiles WHERE id = ?').get(asignado_a)
-      if (tecnicoPerfil?.email) {
-        const suc = db.prepare('SELECT nombre FROM sucursales WHERE id = ?').get(ticket.sucursal_id)
-        notificarAsignacion({ to: tecnicoPerfil.email, folio: ticket.folio, titulo: ticket.titulo, sucursal: suc?.nombre || '' }).catch(() => {})
+      if (tec.email) {
+        notificarAsignacion({ to: tec.email, folio: ticket.folio, titulo: ticket.titulo, sucursal: sucNombre }).catch(() => {})
       }
     }
 
     const updated = stmtTicketById.get(id)
-    broadcast('ticket_actualizado', { id, asignado_a: asignado_a || null })
-    return res.json(mapTicket(updated))
+    broadcast('ticket_actualizado', { id, asignado_a: primero, asignados_ids: tecnicos.map(t => t.id) })
+    return res.json(enrichAsignados([mapTicket(updated)])[0])
 
   } catch (err) {
     console.error('Error asignarTecnico:', err)
@@ -733,8 +831,19 @@ router.delete('/:id', requireRole('admin'), (req, res) => {
     const ticket = db.prepare('SELECT id, folio FROM tickets WHERE id = ?').get(id)
     if (!ticket) return res.status(404).json({ error: 'Ticket no encontrado' })
 
+    // Limpiar archivos físicos antes de borrar el ticket
+    const adjuntos = db.prepare('SELECT filename FROM adjuntos WHERE ticket_id = ?').all(id)
+    for (const adj of adjuntos) {
+      const filePath = path.resolve(UPLOADS_DIR, path.basename(adj.filename))
+      if (filePath.startsWith(UPLOADS_DIR + path.sep) && existsSync(filePath)) {
+        try { unlinkSync(filePath) } catch { /* ignorar si falla */ }
+      }
+    }
+
     db.prepare('DELETE FROM notificaciones WHERE ticket_id = ?').run(id)
     db.prepare('DELETE FROM tickets WHERE id = ?').run(id)
+
+    logAudit({ usuario_id: req.user.sub, usuario_nombre: req.user.nombre, accion: 'ELIMINAR_TICKET', entidad: 'ticket', entidad_id: id, detalle: `Folio ${ticket.folio} eliminado`, ip: req.ip })
 
     return res.json({ ok: true, folio: ticket.folio })
   } catch (err) {

@@ -323,11 +323,22 @@ function formatTimeAgo(dateStr) {
   return `hace ${Math.floor(hrs / 24)}d`
 }
 
+function onKeydown(e) {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+    e.preventDefault()
+    searchOpen.value = true
+  }
+}
+
 onMounted(() => {
   fetchNotificaciones()
   notifInterval = setInterval(fetchNotificaciones, 30000)
+  window.addEventListener('keydown', onKeydown)
 })
-onUnmounted(() => { clearInterval(notifInterval) })
+onUnmounted(() => {
+  clearInterval(notifInterval)
+  window.removeEventListener('keydown', onKeydown)
+})
 
 // ── General ──
 function toggleDark() {

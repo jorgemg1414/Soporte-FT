@@ -76,13 +76,15 @@ const router = createRouter({
 router.beforeEach(async (to) => {
   const authStore = useAuthStore()
 
-  // Solo inicializar auth si la ruta no es pública
+  if (authStore.loggingOut) {
+    return false
+  }
+
   if (!to.meta.public && !authStore.initialized) {
     try { await authStore.init() } catch { authStore.initialized = true }
   }
 
   if (to.meta.public) {
-    // Si ya está autenticado, redirigir a su página
     if (authStore.user) {
       const rol = authStore.profile?.rol
       return rol === 'encargada' ? '/sucursal' : '/tickets'
@@ -90,7 +92,6 @@ router.beforeEach(async (to) => {
     return true
   }
 
-  // Sin sesión → página de selección de sucursal
   if (!authStore.user) return '/sucursal-select'
 
   if (to.meta.roles && !to.meta.roles.includes(authStore.profile?.rol)) {

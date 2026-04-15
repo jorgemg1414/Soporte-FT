@@ -5,7 +5,8 @@ export const useAuthStore = defineStore('auth', {
   state: () => ({
     user: null,
     profile: null,
-    initialized: false
+    initialized: false,
+    loggingOut: false
   }),
 
   actions: {
@@ -19,7 +20,7 @@ export const useAuthStore = defineStore('auth', {
           rol:             data.rol,
           sucursal_id:     data.sucursal_id,
           sucursales:      data.sucursal_nombre
-            ? { nombre: data.sucursal_nombre }
+            ? { id: data.sucursal_id, nombre: data.sucursal_nombre }
             : null
         }
       } catch {
@@ -40,7 +41,7 @@ export const useAuthStore = defineStore('auth', {
         rol:         data.user.rol,
         sucursal_id: data.user.sucursal_id,
         sucursales:  data.user.sucursal_nombre
-          ? { nombre: data.user.sucursal_nombre }
+          ? { id: data.user.sucursal_id, nombre: data.user.sucursal_nombre }
           : null
       }
 
@@ -48,10 +49,12 @@ export const useAuthStore = defineStore('auth', {
     },
 
     async logout() {
+      this.loggingOut = true
       try { await api.post('/auth/logout') } catch { /* ignorar */ }
       this.user        = null
       this.profile     = null
       this.initialized = false
+      this.loggingOut  = false
     }
   }
 })

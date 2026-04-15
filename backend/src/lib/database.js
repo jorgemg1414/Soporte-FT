@@ -131,6 +131,46 @@ db.exec(`
 
 // ─── Migraciones (columnas agregadas después del schema inicial) ──────────────
 try { db.prepare("ALTER TABLE sucursales ADD COLUMN email_notificaciones INTEGER DEFAULT 1").run() } catch { /* ya existe */ }
+try { db.prepare("ALTER TABLE sugerencias ADD COLUMN respondida_por_id TEXT").run() } catch { /* ya existe */ }
+try { db.prepare("ALTER TABLE sugerencias ADD COLUMN respondida_at TEXT").run() } catch { /* ya existe */ }
+
+// Trazabilidad ampliada (quién/cuándo)
+try { db.prepare("ALTER TABLE tickets ADD COLUMN cerrado_por_id TEXT").run() } catch { /* ya existe */ }
+try { db.prepare("ALTER TABLE tickets ADD COLUMN cerrado_at TEXT").run() } catch { /* ya existe */ }
+try { db.prepare("ALTER TABLE tickets ADD COLUMN reabierto_por_id TEXT").run() } catch { /* ya existe */ }
+try { db.prepare("ALTER TABLE tickets ADD COLUMN reabierto_at TEXT").run() } catch { /* ya existe */ }
+try { db.prepare("ALTER TABLE tickets ADD COLUMN urgente_por_id TEXT").run() } catch { /* ya existe */ }
+try { db.prepare("ALTER TABLE tickets ADD COLUMN urgente_at TEXT").run() } catch { /* ya existe */ }
+try { db.prepare("ALTER TABLE tickets ADD COLUMN asignado_por_id TEXT").run() } catch { /* ya existe */ }
+try { db.prepare("ALTER TABLE tickets ADD COLUMN asignado_at TEXT").run() } catch { /* ya existe */ }
+
+try { db.prepare("ALTER TABLE catalogos ADD COLUMN created_by TEXT").run() } catch { /* ya existe */ }
+try { db.prepare("ALTER TABLE catalogos ADD COLUMN updated_by TEXT").run() } catch { /* ya existe */ }
+try { db.prepare("ALTER TABLE catalogos ADD COLUMN updated_at TEXT").run() } catch { /* ya existe */ }
+
+try { db.prepare("ALTER TABLE profiles ADD COLUMN created_by TEXT").run() } catch { /* ya existe */ }
+try { db.prepare("ALTER TABLE profiles ADD COLUMN created_at TEXT").run() } catch { /* ya existe */ }
+
+try { db.prepare("ALTER TABLE sucursales ADD COLUMN last_login_at TEXT").run() } catch { /* ya existe */ }
+try { db.prepare("ALTER TABLE sucursales ADD COLUMN password_changed_by TEXT").run() } catch { /* ya existe */ }
+try { db.prepare("ALTER TABLE sucursales ADD COLUMN password_changed_at TEXT").run() } catch { /* ya existe */ }
+
+try { db.prepare("ALTER TABLE notas_internas ADD COLUMN updated_at TEXT").run() } catch { /* ya existe */ }
+try { db.prepare("ALTER TABLE tickets ADD COLUMN asignados_ids TEXT DEFAULT '[]'").run() } catch { /* ya existe */ }
+// Sincronizar asignados_ids con asignado_a para tickets antiguos
+try {
+  db.prepare("UPDATE tickets SET asignados_ids = json_array(asignado_a) WHERE asignado_a IS NOT NULL AND (asignados_ids IS NULL OR asignados_ids = '[]')").run()
+} catch { /* ignore */ }
+
+// Catálogo: tipos de cancelación del portal (insertar si no existe)
+try {
+  const exists = db.prepare("SELECT COUNT(*) as n FROM catalogos WHERE tipo = 'tipos_cancelacion_portal'").get()
+  if (exists.n === 0) {
+    const ins = db.prepare('INSERT INTO catalogos (id, tipo, label, value, grupo, orden, activo) VALUES (?,?,?,?,?,?,?)')
+    ins.run('tcp-1','tipos_cancelacion_portal','Canjeo de Premios','canjeo_premios','',1,1)
+    ins.run('tcp-2','tipos_cancelacion_portal','Servicios','servicios','',2,1)
+  }
+} catch { /* tabla aún no existe en primera corrida */ }
 
 // Reglas de asignación automática por categoría (soporta múltiples técnicos)
 try {
@@ -160,6 +200,7 @@ try {
   }
   // Si ya tiene tecnico_ids, no hacer nada
 } catch (e) { console.error('[DB] reglas_asignacion migration:', e.message) }
+try { db.prepare("ALTER TABLE reglas_asignacion ADD COLUMN updated_by TEXT").run() } catch { /* ya existe */ }
 
 // Tabla de adjuntos
 try { db.exec(`
@@ -207,8 +248,6 @@ try {
 
     -- Trigger: update
     CREATE TRIGGER tickets_au AFTER UPDATE ON tickets BEGIN
-      INSERT INTO tickets_fts(ticket_id, titulo, descripcion, detalle_falla, folio)
-      VALUES (old.id, old.titulo, old.descripcion, old.detalle_falla, old.folio);
       DELETE FROM tickets_fts WHERE ticket_id = old.id;
       INSERT INTO tickets_fts(ticket_id, titulo, descripcion, detalle_falla, folio)
       VALUES (new.id, new.titulo, new.descripcion, new.detalle_falla, new.folio);
@@ -233,6 +272,23 @@ const count = db.prepare('SELECT COUNT(*) as n FROM sucursales').get()
 if (count.n === 0) {
   console.log('[DB] Base de datos vacía, insertando datos iniciales...')
 
+  const seedVars = ['MOCK_PASSWORD_SUCURSALES', 'MOCK_PASSWORD_ADMIN', 'MOCK_PASSWORD_SOPORTE', 'MOCK_PASSWORD_USUARIOS']
+  const faltantes = seedVars.filter(v => !process.env[v])
+  if (faltantes.length > 0) {
+    if (process.env.NODE_ENV === 'production') {
+      console.error(`[DB] ERROR: Variables de seed faltantes en producción: ${faltantes.join(', ')}. Define todas las MOCK_PASSWORD_* en .env antes de iniciar.`)
+      process.exit(1)
+    }
+    console.warn(`[DB] ADVERTENCIA: Usando contraseñas de seed por defecto para: ${faltantes.join(', ')}. Define MOCK_PASSWORD_* en .env antes de usar en producción.`)
+  }
+  const MIN_LEN = 8
+  for (const v of seedVars) {
+    const val = process.env[v]
+    if (val && val.length < MIN_LEN) {
+      console.error(`[DB] ERROR: ${v} tiene menos de ${MIN_LEN} caracteres. Usa una contraseña más robusta.`)
+      process.exit(1)
+    }
+  }
   const PS  = bcrypt.hashSync(process.env.MOCK_PASSWORD_SUCURSALES || '3787821528', 10)
   const PA  = bcrypt.hashSync(process.env.MOCK_PASSWORD_ADMIN      || 'admin123', 10)
   const PSP = bcrypt.hashSync(process.env.MOCK_PASSWORD_SOPORTE    || 'sop123', 10)
@@ -333,17 +389,77 @@ if (count.n === 0) {
     insertCat.run('tfe-14','tipos_falla_equipo','UPS / No Break','ups','Periféricos',14,1)
     insertCat.run('tfe-15','tipos_falla_equipo','Teléfono / Conmutador','telefono','Periféricos',15,1)
     insertCat.run('tfe-16','tipos_falla_equipo','Otro','otro','Otro',16,1)
+    // Tipos de cancelación del portal
+    insertCat.run('tcp-1','tipos_cancelacion_portal','Canjeo de Premios','canjeo_premios','',1,1)
+    insertCat.run('tcp-2','tipos_cancelacion_portal','Servicios','servicios','',2,1)
   })
 
   insertMany()
   console.log('[DB] Datos iniciales insertados correctamente')
 }
 
-// ─── Folio generator ──────────────────────────────────────────────────────────
+// ─── Refresh tokens ──────────────────────────────────────────────────────────
+try { db.exec(`
+  CREATE TABLE IF NOT EXISTS refresh_tokens (
+    id          TEXT PRIMARY KEY,
+    user_id     TEXT NOT NULL,
+    rol         TEXT NOT NULL,
+    sucursal_id TEXT,
+    token_hash  TEXT NOT NULL UNIQUE,
+    ip          TEXT,
+    user_agent  TEXT,
+    expires_at  TEXT NOT NULL,
+    created_at  TEXT DEFAULT (datetime('now')),
+    revoked     INTEGER DEFAULT 0
+  );
+  CREATE INDEX IF NOT EXISTS idx_refresh_user    ON refresh_tokens(user_id);
+  CREATE INDEX IF NOT EXISTS idx_refresh_hash    ON refresh_tokens(token_hash);
+  CREATE INDEX IF NOT EXISTS idx_refresh_expires ON refresh_tokens(expires_at);
+`) } catch { /* ya existe */ }
+
+// ─── Security logs ────────────────────────────────────────────────────────────
+try { db.exec(`
+  CREATE TABLE IF NOT EXISTS security_logs (
+    id         TEXT PRIMARY KEY,
+    event      TEXT NOT NULL,
+    details    TEXT,
+    ip         TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_seclog_event   ON security_logs(event);
+  CREATE INDEX IF NOT EXISTS idx_seclog_created ON security_logs(created_at);
+`) } catch { /* ya existe */ }
+
+// ─── Audit log de acciones administrativas ────────────────────────────────────
+try { db.exec(`
+  CREATE TABLE IF NOT EXISTS audit_log (
+    id             TEXT PRIMARY KEY,
+    usuario_id     TEXT,
+    usuario_nombre TEXT,
+    accion         TEXT NOT NULL,
+    entidad        TEXT,
+    entidad_id     TEXT,
+    detalle        TEXT,
+    ip             TEXT,
+    created_at     TEXT DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_audit_usuario ON audit_log(usuario_id);
+  CREATE INDEX IF NOT EXISTS idx_audit_accion  ON audit_log(accion);
+  CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at);
+`) } catch { /* ya existe */ }
+
+// Limpiar refresh tokens expirados cada 24 horas
+setInterval(() => {
+  try { db.prepare("DELETE FROM refresh_tokens WHERE expires_at < datetime('now')").run() } catch { /* ignore */ }
+}, 24 * 60 * 60 * 1000)
+
+// ─── Folio generator (thread-safe con transacción) ───────────────────────────
 export function generateFolio() {
-  const last = db.prepare("SELECT folio FROM tickets ORDER BY CAST(SUBSTR(folio, 3) AS INTEGER) DESC LIMIT 1").get()
-  const seq = last ? parseInt(last.folio.slice(2)) + 1 : 1
-  return `R-${String(seq).padStart(6, '0')}`
+  return db.transaction(() => {
+    const last = db.prepare("SELECT folio FROM tickets ORDER BY CAST(SUBSTR(folio, 3) AS INTEGER) DESC LIMIT 1").get()
+    const seq = last ? parseInt(last.folio.slice(2)) + 1 : 1
+    return `R-${String(seq).padStart(6, '0')}`
+  })()
 }
 
 export function genId() {

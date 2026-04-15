@@ -7,7 +7,7 @@ export function authenticate(req, res, next) {
   if (!token) return res.status(401).json({ error: 'No autorizado' })
   try {
     const user = jwt.verify(token, process.env.JWT_SECRET)
-    if (user.rol === 'encargada' && user.iat < getSucursalInvalidatedAt()) {
+    if (user.iat < getSucursalInvalidatedAt()) {
       return res.status(401).json({ error: 'Sesión cerrada por el administrador' })
     }
     req.user = user

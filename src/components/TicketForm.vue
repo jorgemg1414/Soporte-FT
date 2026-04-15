@@ -62,6 +62,25 @@
               :rules="[val => !!val || 'Indica el motivo de la cancelación']" />
           </template>
 
+          <!-- Cancelación del Portal -->
+          <template v-if="form.categoria === 'cancelacion_portal'">
+            <q-separator />
+            <div class="text-subtitle2 text-deep-orange text-weight-bold">
+              <q-icon name="language" class="q-mr-xs" /> Datos de Cancelación de Documento Portal
+            </div>
+            <q-select v-model="form.tipo_documento" outlined label="Tipo de cancelación *"
+              :options="tiposCancelacionPortal" emit-value map-options
+              :rules="[val => !!val || 'Selecciona el tipo']" />
+
+            <q-input v-model="form.folio_pvwin" outlined label="Folio a cancelar *"
+              maxlength="300" counter
+              :rules="[val => !!val || 'Requerido']" />
+
+            <q-input v-model="form.descripcion" outlined label="Motivo de la cancelación *"
+              type="textarea" rows="3" maxlength="300" counter
+              :rules="[val => !!val || 'Indica el motivo de la cancelación']" />
+          </template>
+
           <!-- Falla PVWIN -->
           <template v-if="form.categoria === 'falla_pvwin'">
             <q-separator />
@@ -104,7 +123,7 @@
 
           <div class="flex flex-center q-pt-sm">
             <q-btn type="submit" :label="submitLabel" color="primary" unelevated icon="send"
-              :loading="loading" size="lg" style="border-radius: 10px; min-width: 220px" />
+              :loading="loading" :disable="loading" size="lg" style="border-radius: 10px; min-width: 220px" />
           </div>
 
         </q-form>
@@ -130,7 +149,7 @@ const emit = defineEmits(['created'])
 
 const ticketsStore = useTicketsStore()
 const $q = useQuasar()
-const { tiposDocumento, tiposFallaEquipo, cargarCatalogos } = useCatalogos()
+const { tiposDocumento, tiposFallaEquipo, tiposCancelacionPortal, cargarCatalogos } = useCatalogos()
 
 const loading = ref(false)
 const formRef = ref(null)
@@ -143,10 +162,11 @@ const form = ref({
 })
 
 const categorias = [
-  { label: 'Cancelación de Documento',      value: 'cancelacion_documento', icon: 'cancel' },
-  { label: 'Falla en PVWIN',                value: 'falla_pvwin',           icon: 'computer' },
-  { label: 'Falla en Equipo / Computadora', value: 'falla_computadora',     icon: 'desktop_windows' },
-  { label: 'Otro',                           value: 'otro',                  icon: 'help_outline' }
+  { label: 'Cancelación de Documento PVWIN',  value: 'cancelacion_documento', icon: 'cancel' },
+  { label: 'Cancelación de Documento Portal', value: 'cancelacion_portal',    icon: 'language' },
+  { label: 'Falla en PVWIN',                 value: 'falla_pvwin',           icon: 'computer' },
+  { label: 'Falla en Equipo / Computadora',  value: 'falla_computadora',     icon: 'desktop_windows' },
+  { label: 'Otro',                            value: 'otro',                  icon: 'help_outline' }
 ]
 
 onMounted(cargarCatalogos)
@@ -166,6 +186,7 @@ function resetCamposCategoria() {
 function resetForm() {
   ticketCreado.value = null
   form.value = { titulo: '', categoria: null, descripcion: '', tipo_documento: null, folio_pvwin: '', folio_correcto: '', detalle_falla: '', tipo_falla: null, tipo_traspaso: null }
+  formRef.value?.resetValidation()
 }
 
 async function handleSubmit() {
@@ -201,7 +222,10 @@ async function handleSubmit() {
     const ticket = await ticketsStore.crearTicket(payload)
     ticketCreado.value = ticket
     emit('created', ticket)
-    await ticketsStore.fetchTickets()
+    await Promise.all([
+      ticketsStore.fetchTickets(),
+      ticketsStore.fetchStats()
+    ])
   } catch (e) {
     $q.notify({ type: 'negative', message: 'Error al crear el reporte: ' + e.message })
   } finally {

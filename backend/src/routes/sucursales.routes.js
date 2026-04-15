@@ -3,6 +3,7 @@ import bcrypt from 'bcrypt'
 import jwt from 'jsonwebtoken'
 import db, { genId } from '../lib/database.js'
 import { authenticate, requireRole } from '../middleware/auth.js'
+import { logAudit } from '../lib/audit.js'
 
 const router = Router()
 
@@ -18,7 +19,14 @@ router.get('/', (req, res) => {
     } catch { /* sin token o inválido — continúa sin auth */ }
 
     if (user && (user.rol === 'admin' || user.rol === 'soporte')) {
-      const sucursales = db.prepare('SELECT id, nombre, email, email_notificaciones FROM sucursales ORDER BY nombre').all()
+      const sucursales = db.prepare(`
+        SELECT s.id, s.nombre, s.email, s.email_notificaciones, s.last_login_at,
+               s.password_changed_at, s.password_changed_by,
+               p.nombre as password_changed_by_nombre
+        FROM sucursales s
+        LEFT JOIN profiles p ON s.password_changed_by = p.id
+        ORDER BY s.nombre
+      `).all()
       return res.json(sucursales)
     }
 
@@ -42,6 +50,7 @@ router.post('/', authenticate, requireRole('admin'), (req, res) => {
     db.prepare('INSERT INTO sucursales (id, nombre, password, email, created_at) VALUES (?,?,?,?,?)')
       .run(id, nombre.trim().toUpperCase(), hashedPassword, email?.trim() || '', new Date().toISOString())
     const suc = db.prepare('SELECT id, nombre, email, email_notificaciones, created_at FROM sucursales WHERE id = ?').get(id)
+    logAudit({ usuario_id: req.user.sub, usuario_nombre: req.user.nombre, accion: 'CREAR_SUCURSAL', entidad: 'sucursal', entidad_id: id, detalle: `Creada: ${nombre.trim().toUpperCase()}`, ip: req.ip })
     return res.status(201).json(suc)
   } catch (err) {
     console.error('Error createSucursal:', err)
@@ -56,7 +65,12 @@ router.put('/password-todas', authenticate, requireRole('admin'), (req, res) => 
     if (!password || password.length < 8) return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres' })
 
     const hashedPassword = bcrypt.hashSync(password, 10)
-    const info = db.prepare('UPDATE sucursales SET password = ?').run(hashedPassword)
+    const now = new Date().toISOString()
+    const info = db.prepare('UPDATE sucursales SET password = ?, password_changed_by = ?, password_changed_at = ?')
+      .run(hashedPassword, req.user.sub, now)
+    // Revocar refresh tokens de todas las sucursales
+    db.prepare("UPDATE refresh_tokens SET revoked = 1 WHERE rol = 'encargada'").run()
+    logAudit({ usuario_id: req.user.sub, usuario_nombre: req.user.nombre, accion: 'CAMBIO_PASSWORD_TODAS_SUCURSALES', detalle: `${info.changes} sucursales actualizadas`, ip: req.ip })
     return res.json({ ok: true, message: `Contraseña actualizada en ${info.changes} sucursales` })
   } catch (err) {
     console.error('Error cambiarPasswordTodas:', err)
@@ -93,7 +107,11 @@ router.put('/:id/password', authenticate, requireRole('admin'), (req, res) => {
 
     const exists = db.prepare('SELECT id FROM sucursales WHERE id = ?').get(id)
     if (!exists) return res.status(404).json({ error: 'Sucursal no encontrada' })
-    db.prepare('UPDATE sucursales SET password = ? WHERE id = ?').run(bcrypt.hashSync(password, 10), id)
+    db.prepare('UPDATE sucursales SET password = ?, password_changed_by = ?, password_changed_at = ? WHERE id = ?')
+      .run(bcrypt.hashSync(password, 10), req.user.sub, new Date().toISOString(), id)
+    // Revocar refresh tokens de esta sucursal
+    db.prepare("UPDATE refresh_tokens SET revoked = 1 WHERE rol = 'encargada' AND sucursal_id = ?").run(id)
+    logAudit({ usuario_id: req.user.sub, usuario_nombre: req.user.nombre, accion: 'CAMBIO_PASSWORD_SUCURSAL', entidad: 'sucursal', entidad_id: id, ip: req.ip })
     return res.json({ ok: true, message: 'Contraseña actualizada' })
   } catch (err) {
     console.error('Error cambiarPassword:', err)
@@ -114,7 +132,9 @@ router.delete('/:id', authenticate, requireRole('admin'), (req, res) => {
       return res.status(409).json({ error: `No se puede eliminar: tiene ${ticketCount.n} ticket(s) asociado(s)` })
     }
 
+    const suc = db.prepare('SELECT nombre FROM sucursales WHERE id = ?').get(id)
     db.prepare('DELETE FROM sucursales WHERE id = ?').run(id)
+    logAudit({ usuario_id: req.user.sub, usuario_nombre: req.user.nombre, accion: 'ELIMINAR_SUCURSAL', entidad: 'sucursal', entidad_id: id, detalle: `Eliminada: ${suc?.nombre}`, ip: req.ip })
     return res.json({ ok: true })
   } catch (err) {
     console.error('Error deleteSucursal:', err)

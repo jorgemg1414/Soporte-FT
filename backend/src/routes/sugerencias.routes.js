@@ -6,6 +6,17 @@ const router = Router()
 
 router.use(authenticate)
 
+function enrich(s) {
+  if (!s) return s
+  const suc = s.sucursal_id ? db.prepare('SELECT nombre FROM sucursales WHERE id = ?').get(s.sucursal_id) : null
+  const resp = s.respondida_por_id ? db.prepare('SELECT nombre FROM profiles WHERE id = ?').get(s.respondida_por_id) : null
+  return {
+    ...s,
+    sucursal_nombre: suc?.nombre || '—',
+    respondida_por_nombre: resp?.nombre || null
+  }
+}
+
 // ─── GET /api/sugerencias ─────────────────────────────────────────────────────
 router.get('/', (req, res) => {
   try {
@@ -15,10 +26,7 @@ router.get('/', (req, res) => {
     } else {
       sugerencias = db.prepare('SELECT * FROM sugerencias ORDER BY created_at DESC').all()
     }
-    return res.json(sugerencias.map(s => {
-      const suc = s.sucursal_id ? db.prepare('SELECT nombre FROM sucursales WHERE id = ?').get(s.sucursal_id) : null
-      return { ...s, sucursal_nombre: suc?.nombre || '—' }
-    }))
+    return res.json(sugerencias.map(enrich))
   } catch (err) {
     console.error('Error getSugerencias:', err)
     res.status(500).json({ error: 'Error al obtener sugerencias' })
@@ -37,8 +45,7 @@ router.post('/', (req, res) => {
     db.prepare('INSERT INTO sugerencias (id, usuario_id, sucursal_id, contenido, estado, created_at) VALUES (?,?,?,?,?,?)')
       .run(id, req.user.sub, req.user.sucursal_id || null, contenido.trim(), 'pendiente', now)
     const nueva = db.prepare('SELECT * FROM sugerencias WHERE id = ?').get(id)
-    const suc = nueva.sucursal_id ? db.prepare('SELECT nombre FROM sucursales WHERE id = ?').get(nueva.sucursal_id) : null
-    return res.status(201).json({ ...nueva, sucursal_nombre: suc?.nombre || '—' })
+    return res.status(201).json(enrich(nueva))
   } catch (err) {
     console.error('Error createSugerencia:', err)
     res.status(500).json({ error: 'Error al crear sugerencia' })
@@ -57,12 +64,12 @@ router.put('/:id/responder', requireRole('admin', 'soporte'), (req, res) => {
     const exists = db.prepare('SELECT id FROM sugerencias WHERE id = ?').get(req.params.id)
     if (!exists) return res.status(404).json({ error: 'Sugerencia no encontrada' })
 
-    db.prepare('UPDATE sugerencias SET respuesta=?, estado=? WHERE id=?')
-      .run(respuesta.trim(), nuevoEstado, req.params.id)
+    const now = new Date().toISOString()
+    db.prepare('UPDATE sugerencias SET respuesta=?, estado=?, respondida_por_id=?, respondida_at=? WHERE id=?')
+      .run(respuesta.trim(), nuevoEstado, req.user.sub, now, req.params.id)
 
     const updated = db.prepare('SELECT * FROM sugerencias WHERE id = ?').get(req.params.id)
-    const suc = updated.sucursal_id ? db.prepare('SELECT nombre FROM sucursales WHERE id = ?').get(updated.sucursal_id) : null
-    return res.json({ ...updated, sucursal_nombre: suc?.nombre || '—' })
+    return res.json(enrich(updated))
   } catch (err) {
     console.error('Error responderSugerencia:', err)
     res.status(500).json({ error: 'Error al responder sugerencia' })

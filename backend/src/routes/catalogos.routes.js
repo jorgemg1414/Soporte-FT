@@ -38,8 +38,9 @@ router.post('/', authenticate, requireRole('admin'), (req, res) => {
 
     const maxOrden = db.prepare('SELECT MAX(orden) as m FROM catalogos WHERE tipo = ?').get(tipo)
     const id = genId()
-    db.prepare('INSERT INTO catalogos (id, tipo, label, value, grupo, orden, activo) VALUES (?,?,?,?,?,?,?)')
-      .run(id, tipo, label, value, grupo || '', orden ?? (maxOrden?.m || 0) + 1, activo ? 1 : 0)
+    const now = new Date().toISOString()
+    db.prepare('INSERT INTO catalogos (id, tipo, label, value, grupo, orden, activo, created_by, updated_by, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)')
+      .run(id, tipo, label, value, grupo || '', orden ?? (maxOrden?.m || 0) + 1, activo ? 1 : 0, req.user.sub, req.user.sub, now)
     const nuevo = db.prepare('SELECT * FROM catalogos WHERE id = ?').get(id)
     return res.status(201).json({ ...nuevo, activo: !!nuevo.activo })
   } catch (e) {
@@ -53,8 +54,8 @@ router.put('/:id', authenticate, requireRole('admin'), (req, res) => {
     const { label, value, grupo, orden, activo } = req.body
     const exists = db.prepare('SELECT id FROM catalogos WHERE id = ?').get(req.params.id)
     if (!exists) return res.status(404).json({ error: 'No encontrado' })
-    db.prepare('UPDATE catalogos SET label=?, value=?, grupo=?, orden=?, activo=? WHERE id=?')
-      .run(label, value, grupo, orden, activo ? 1 : 0, req.params.id)
+    db.prepare('UPDATE catalogos SET label=?, value=?, grupo=?, orden=?, activo=?, updated_by=?, updated_at=? WHERE id=?')
+      .run(label, value, grupo, orden, activo ? 1 : 0, req.user.sub, new Date().toISOString(), req.params.id)
     const updated = db.prepare('SELECT * FROM catalogos WHERE id = ?').get(req.params.id)
     return res.json({ ...updated, activo: !!updated.activo })
   } catch (e) {

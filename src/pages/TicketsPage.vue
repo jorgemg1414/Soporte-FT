@@ -132,7 +132,7 @@
           <q-td :props="props">
             <div class="row items-center no-wrap q-gutter-xs">
               <span class="text-primary text-weight-bold">{{ props.value }}</span>
-              <q-badge v-if="props.row.asignado_a === authStore.profile?.id"
+              <q-badge v-if="esMio(props.row)"
                 color="teal" style="font-size: 10px; padding: 2px 6px">
                 Mío
               </q-badge>
@@ -236,10 +236,11 @@ const estadoOptions = [
   { label: 'Cerrado',    value: 'cerrado' }
 ]
 const categoriaOptions = [
-  { label: 'Cancelación de Documento', value: 'cancelacion_documento' },
-  { label: 'Falla PVWIN',              value: 'falla_pvwin' },
-  { label: 'Falla de Equipo',          value: 'falla_computadora' },
-  { label: 'Otro',                     value: 'otro' }
+  { label: 'Cancelación Doc. PVWIN',  value: 'cancelacion_documento' },
+  { label: 'Cancelación Doc. Portal', value: 'cancelacion_portal' },
+  { label: 'Falla PVWIN',             value: 'falla_pvwin' },
+  { label: 'Falla de Equipo',         value: 'falla_computadora' },
+  { label: 'Otro',                    value: 'otro' }
 ]
 const sucursalOptions = computed(() =>
   sucursales.value.map(s => ({ label: s.nombre, value: s.nombre }))
@@ -288,8 +289,8 @@ const ticketsFiltrados = computed(() => {
     const matchEstado    = !filtros.value.estado    || t.estado    === filtros.value.estado
     const matchCategoria = !filtros.value.categoria || t.categoria === filtros.value.categoria
     const matchSucursal  = !filtros.value.sucursal  || t.sucursales?.nombre === filtros.value.sucursal
-    const matchTecnico   = !filtros.value.tecnico   || t.asignado_a === filtros.value.tecnico
-    const matchUrgente   = !filtros.value.urgente   || t.urgente === true
+    const matchTecnico   = !filtros.value.tecnico   || (t.asignados_ids?.includes(filtros.value.tecnico) || t.asignado_a === filtros.value.tecnico)
+    const matchUrgente   = !filtros.value.urgente   || !!t.urgente
     const matchDesde     = !filtros.value.fechaDesde || t.created_at >= filtros.value.fechaDesde
     const matchHasta     = !filtros.value.fechaHasta || t.created_at.slice(0, 10) <= filtros.value.fechaHasta
     return matchBusqueda && matchEstado && matchCategoria && matchSucursal && matchTecnico && matchUrgente && matchDesde && matchHasta
@@ -362,7 +363,13 @@ function exportarExcel() {
 
 async function exportarPDF() {
   try {
-    const { data } = await api.get('/exportar/pdf', { responseType: 'blob' })
+    const params = new URLSearchParams()
+    if (filtros.value.estado) params.set('estado', filtros.value.estado)
+    if (filtros.value.categoria) params.set('categoria', filtros.value.categoria)
+    if (filtros.value.sucursal) params.set('sucursal', filtros.value.sucursal)
+    if (filtros.value.urgente) params.set('urgente', '1')
+    const query = params.toString() ? `?${params.toString()}` : ''
+    const { data } = await api.get(`/exportar/pdf${query}`, { responseType: 'blob' })
     const url = URL.createObjectURL(data)
     const link = document.createElement('a')
     link.href = url
@@ -374,9 +381,14 @@ async function exportarPDF() {
   }
 }
 
+function esMio(row) {
+  const me = authStore.profile?.id
+  if (!me) return false
+  return row.asignados_ids?.includes(me) || row.asignado_a === me
+}
+
 function rowClass(row) {
-  if (row.asignado_a === authStore.profile?.id) return 'row-assigned-me'
-  return ''
+  return esMio(row) ? 'row-assigned-me' : ''
 }
 
 function calcTiempoResolucion(t) {

@@ -22,9 +22,10 @@
         <q-icon name="store" size="12px" color="grey-5" class="q-mr-xs" />
         <span class="text-caption text-grey-5">{{ ticket.sucursales?.nombre || '—' }}</span>
         <q-space />
-        <template v-if="ticket.asignado_a">
+        <template v-if="asignadosLista.length > 0">
           <q-icon name="person" size="12px" color="info" class="q-mr-xs" />
-          <span class="text-caption text-info">{{ asignadoNombre }}</span>
+          <span class="text-caption text-info ellipsis" style="max-width: 140px">{{ asignadosLista.join(', ') }}</span>
+          <q-tooltip v-if="asignadosLista.length > 1">{{ asignadosLista.join(', ') }}</q-tooltip>
         </template>
         <span v-else class="text-caption text-grey-4">Sin asignar</span>
       </div>
@@ -39,9 +40,13 @@ import { useSLA } from '../composables/useSLA'
 const props = defineProps({ ticket: Object, tecnicos: { type: Array, default: () => [] } })
 const { slaLabel, slaBadgeColor, slaIcon } = useSLA()
 
-const asignadoNombre = computed(() => {
-  const t = props.tecnicos.find(t => t.id === props.ticket.asignado_a)
-  return t?.nombre || '—'
+const asignadosLista = computed(() => {
+  // Preferir asignados (objetos enriquecidos por backend) → asignados_ids → asignado_a
+  if (props.ticket.asignados?.length) return props.ticket.asignados.map(a => a.nombre)
+  const ids = props.ticket.asignados_ids?.length
+    ? props.ticket.asignados_ids
+    : (props.ticket.asignado_a ? [props.ticket.asignado_a] : [])
+  return ids.map(id => props.tecnicos.find(t => t.id === id)?.nombre).filter(Boolean)
 })
 </script>
 

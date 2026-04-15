@@ -4,16 +4,19 @@ import api from '../lib/api'
 export function useCatalogos() {
   const tiposDocumento = ref([])
   const tiposFallaEquipo = ref([])
+  const tiposCancelacionPortal = ref([])
   const cargado = ref(false)
 
   async function cargarCatalogos() {
     try {
-      const [resDoc, resFalla] = await Promise.all([
+      const [resDoc, resFalla, resPortal] = await Promise.all([
         api.get('/catalogos?tipo=tipos_documento'),
-        api.get('/catalogos?tipo=tipos_falla_equipo')
+        api.get('/catalogos?tipo=tipos_falla_equipo'),
+        api.get('/catalogos?tipo=tipos_cancelacion_portal')
       ])
 
       tiposDocumento.value = (resDoc.data || []).map(c => ({ label: c.label, value: c.value }))
+      tiposCancelacionPortal.value = (resPortal.data || []).map(c => ({ label: c.label, value: c.value }))
 
       const fallaRaw = resFalla.data || []
       const grupos = [...new Set(fallaRaw.map(c => c.grupo).filter(Boolean))]
@@ -34,5 +37,5 @@ export function useCatalogos() {
     }
   }
 
-  return { tiposDocumento, tiposFallaEquipo, cargado, cargarCatalogos }
+  return { tiposDocumento, tiposFallaEquipo, tiposCancelacionPortal, cargado, cargarCatalogos }
 }

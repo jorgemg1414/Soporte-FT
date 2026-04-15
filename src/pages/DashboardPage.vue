@@ -275,7 +275,8 @@ const chartEstado = computed(() => {
 
 // ── Gráfica: barras por categoría ────────────────────────────────────────────
 const catLabels = {
-  cancelacion_documento: 'Cancelación',
+  cancelacion_documento: 'Cancel. PVWIN',
+  cancelacion_portal:    'Cancel. Portal',
   falla_pvwin:           'Falla PVWIN',
   falla_computadora:     'Falla Equipo',
   otro:                  'Otro'

@@ -1,5 +1,22 @@
 import nodemailer from 'nodemailer'
 
+function escapeHtml(text) {
+  if (!text) return ''
+  const htmlEscapes = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  }
+  return String(text).replace(/[&<>"']/g, char => htmlEscapes[char])
+}
+
+function escapeAttr(text) {
+  if (!text) return ''
+  return String(text).replace(/"/g, '&quot;').replace(/'/g, '&#39;')
+}
+
 // Si SMTP_USER no está configurado, las funciones sólo muestran un log y no fallan
 function isConfigured() {
   return !!(process.env.SMTP_USER && process.env.SMTP_PASS)
@@ -45,29 +62,29 @@ function plantillaEstado({ folio, titulo, sucursal, estado, tecnico, appUrl }) {
         <tr><td style="padding:28px 32px 0">
           <table cellpadding="0" cellspacing="0">
             <tr><td style="background:${info.color};border-radius:20px;padding:6px 16px">
-              <span style="color:#ffffff;font-size:13px;font-weight:bold">${info.icon} ${info.label}</span>
+              <span style="color:#ffffff;font-size:13px;font-weight:bold">${escapeHtml(info.icon)} ${escapeHtml(info.label)}</span>
             </td></tr>
           </table>
-          <h2 style="margin:16px 0 6px;font-size:20px;color:#212121">${folio}</h2>
-          <p style="margin:0;font-size:15px;color:#424242">${titulo}</p>
+          <h2 style="margin:16px 0 6px;font-size:20px;color:#212121">${escapeHtml(folio)}</h2>
+          <p style="margin:0;font-size:15px;color:#424242">${escapeHtml(titulo)}</p>
         </td></tr>
 
         <!-- Cuerpo -->
         <tr><td style="padding:20px 32px">
-          <p style="margin:0 0 16px;font-size:15px;color:#424242;line-height:1.6">${info.mensaje}</p>
+          <p style="margin:0 0 16px;font-size:15px;color:#424242;line-height:1.6">${escapeHtml(info.mensaje)}</p>
 
           <table width="100%" cellpadding="0" cellspacing="0" style="background:#F5F5F5;border-radius:8px;padding:16px">
             <tr>
               <td style="font-size:13px;color:#757575;padding:4px 0">Sucursal</td>
-              <td style="font-size:13px;color:#212121;font-weight:bold;text-align:right">${sucursal}</td>
+              <td style="font-size:13px;color:#212121;font-weight:bold;text-align:right">${escapeHtml(sucursal)}</td>
             </tr>
             <tr>
               <td style="font-size:13px;color:#757575;padding:4px 0">Folio</td>
-              <td style="font-size:13px;color:#1976D2;font-weight:bold;text-align:right">${folio}</td>
+              <td style="font-size:13px;color:#1976D2;font-weight:bold;text-align:right">${escapeHtml(folio)}</td>
             </tr>
             ${tecnico ? `<tr>
               <td style="font-size:13px;color:#757575;padding:4px 0">Atendido por</td>
-              <td style="font-size:13px;color:#212121;font-weight:bold;text-align:right">${tecnico}</td>
+              <td style="font-size:13px;color:#212121;font-weight:bold;text-align:right">${escapeHtml(tecnico)}</td>
             </tr>` : ''}
           </table>
         </td></tr>
@@ -103,16 +120,16 @@ function plantillaComentario({ folio, titulo, sucursal, comentario, tecnico }) {
         </td></tr>
 
         <tr><td style="padding:28px 32px 0">
-          <h2 style="margin:0 0 6px;font-size:20px;color:#212121">${folio}</h2>
-          <p style="margin:0;font-size:15px;color:#424242">${titulo}</p>
+          <h2 style="margin:0 0 6px;font-size:20px;color:#212121">${escapeHtml(folio)}</h2>
+          <p style="margin:0;font-size:15px;color:#424242">${escapeHtml(titulo)}</p>
         </td></tr>
 
         <tr><td style="padding:20px 32px">
           <p style="margin:0 0 12px;font-size:14px;color:#757575">
-            <strong style="color:#1976D2">${tecnico}</strong> ha añadido un comentario:
+            <strong style="color:#1976D2">${escapeHtml(tecnico)}</strong> ha añadido un comentario:
           </p>
           <div style="background:#E3F2FD;border-left:4px solid #1976D2;border-radius:4px;padding:16px">
-            <p style="margin:0;font-size:15px;color:#212121;line-height:1.6;white-space:pre-wrap">${comentario}</p>
+            <p style="margin:0;font-size:15px;color:#212121;line-height:1.6;white-space:pre-wrap">${escapeHtml(comentario)}</p>
           </div>
         </td></tr>
 
@@ -159,7 +176,8 @@ export async function notificarNuevoTicket({ folio, titulo, sucursal, categoria,
   if (!isConfigured() || !to) return
 
   const catLabels = {
-    cancelacion_documento: 'Cancelación de documento',
+    cancelacion_documento: 'Cancelación de Documento PVWIN',
+    cancelacion_portal:    'Cancelación de Documento Portal',
     falla_pvwin:           'Falla PVWIN',
     falla_computadora:     'Falla de equipo',
     otro:                  'Otro'
@@ -185,29 +203,29 @@ export async function notificarNuevoTicket({ folio, titulo, sucursal, categoria,
               <span style="color:#ffffff;font-size:13px;font-weight:bold">🆕 Nuevo Reporte</span>
             </td></tr>
           </table>
-          <h2 style="margin:16px 0 6px;font-size:20px;color:#212121">${folio}</h2>
-          <p style="margin:0;font-size:15px;color:#424242">${titulo}</p>
+          <h2 style="margin:16px 0 6px;font-size:20px;color:#212121">${escapeHtml(folio)}</h2>
+          <p style="margin:0;font-size:15px;color:#424242">${escapeHtml(titulo)}</p>
         </td></tr>
 
         <tr><td style="padding:20px 32px">
           <table width="100%" cellpadding="0" cellspacing="0" style="background:#FFF3E0;border-radius:8px;padding:16px;margin-bottom:16px">
             <tr>
               <td style="font-size:13px;color:#757575;padding:4px 0">Sucursal</td>
-              <td style="font-size:13px;color:#212121;font-weight:bold;text-align:right">${sucursal}</td>
+              <td style="font-size:13px;color:#212121;font-weight:bold;text-align:right">${escapeHtml(sucursal)}</td>
             </tr>
             <tr>
               <td style="font-size:13px;color:#757575;padding:4px 0">Categoría</td>
-              <td style="font-size:13px;color:#E65100;font-weight:bold;text-align:right">${catLabels[categoria] || categoria}</td>
+              <td style="font-size:13px;color:#E65100;font-weight:bold;text-align:right">${escapeHtml(catLabels[categoria] || categoria)}</td>
             </tr>
             <tr>
               <td style="font-size:13px;color:#757575;padding:4px 0">Folio</td>
-              <td style="font-size:13px;color:#1976D2;font-weight:bold;text-align:right">${folio}</td>
+              <td style="font-size:13px;color:#1976D2;font-weight:bold;text-align:right">${escapeHtml(folio)}</td>
             </tr>
           </table>
           ${descripcion ? `
           <div style="background:#F5F5F5;border-left:4px solid #E65100;border-radius:4px;padding:12px 16px">
             <p style="margin:0;font-size:13px;color:#757575;margin-bottom:4px">Descripción:</p>
-            <p style="margin:0;font-size:14px;color:#212121;line-height:1.5">${descripcion}</p>
+            <p style="margin:0;font-size:14px;color:#212121;line-height:1.5">${escapeHtml(descripcion)}</p>
           </div>` : ''}
         </td></tr>
 
@@ -263,19 +281,19 @@ export async function notificarAsignacion({ to, folio, titulo, sucursal }) {
               <span style="color:#ffffff;font-size:13px;font-weight:bold">📋 Asignado</span>
             </td></tr>
           </table>
-          <h2 style="margin:16px 0 6px;font-size:20px;color:#212121">${folio}</h2>
-          <p style="margin:0;font-size:15px;color:#424242">${titulo}</p>
+          <h2 style="margin:16px 0 6px;font-size:20px;color:#212121">${escapeHtml(folio)}</h2>
+          <p style="margin:0;font-size:15px;color:#424242">${escapeHtml(titulo)}</p>
         </td></tr>
         <tr><td style="padding:20px 32px">
           <p style="margin:0 0 16px;font-size:15px;color:#424242;line-height:1.6">Se te ha asignado un reporte de soporte. Por favor atiéndelo a la brevedad.</p>
           <table width="100%" cellpadding="0" cellspacing="0" style="background:#F5F5F5;border-radius:8px;padding:16px">
             <tr>
               <td style="font-size:13px;color:#757575;padding:4px 0">Sucursal</td>
-              <td style="font-size:13px;color:#212121;font-weight:bold;text-align:right">${sucursal}</td>
+              <td style="font-size:13px;color:#212121;font-weight:bold;text-align:right">${escapeHtml(sucursal)}</td>
             </tr>
             <tr>
               <td style="font-size:13px;color:#757575;padding:4px 0">Folio</td>
-              <td style="font-size:13px;color:#1976D2;font-weight:bold;text-align:right">${folio}</td>
+              <td style="font-size:13px;color:#1976D2;font-weight:bold;text-align:right">${escapeHtml(folio)}</td>
             </tr>
           </table>
         </td></tr>

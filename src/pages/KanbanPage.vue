@@ -159,10 +159,11 @@ const columnas = [
 const urgentesCount = computed(() => ticketsFiltrados.value.filter(t => t.urgente).length)
 
 const categoriaOptions = [
-  { label: 'Cancelación',  value: 'cancelacion_documento' },
-  { label: 'Falla PVWIN',  value: 'falla_pvwin' },
-  { label: 'Falla Equipo', value: 'falla_computadora' },
-  { label: 'Otro',         value: 'otro' }
+  { label: 'Cancel. PVWIN',  value: 'cancelacion_documento' },
+  { label: 'Cancel. Portal', value: 'cancelacion_portal' },
+  { label: 'Falla PVWIN',    value: 'falla_pvwin' },
+  { label: 'Falla Equipo',   value: 'falla_computadora' },
+  { label: 'Otro',           value: 'otro' }
 ]
 const sucursalOptions = computed(() => sucursales.value.map(s => ({ label: s.nombre, value: s.id })))
 
@@ -197,11 +198,26 @@ onMounted(async () => {
 
 const { secondsAgo } = usePolling(cargar, 30000)
 
+const transiciones = {
+  abierto:    ['en_proceso', 'resuelto', 'cerrado'],
+  en_proceso: ['resuelto', 'cerrado', 'abierto'],
+  resuelto:   ['cerrado', 'abierto'],
+  cerrado:    ['abierto']
+}
+
 async function onDrop(event, nuevoEstado) {
   const item = event.added?.element
   if (!item || item.estado === nuevoEstado) return
 
-  // Optimistic update
+  const validas = transiciones[item.estado] || []
+  if (!validas.includes(nuevoEstado)) {
+    $q.notify({
+      type: 'negative',
+      message: `No se puede mover de "${item.estado}" a "${nuevoEstado}"`
+    })
+    return
+  }
+
   const prevEstado = item.estado
   item.estado = nuevoEstado
 
