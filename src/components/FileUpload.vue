@@ -166,8 +166,8 @@ defineExpose({ upload, files })
   border-radius: 12px;
   transition: border-color 0.2s, background 0.2s;
 }
-.drop-zone:hover { border-color: #1976D2; }
-.drop-zone--active { border-color: #1976D2; background: rgba(25, 118, 210, 0.05); }
+.drop-zone:hover { border-color: var(--theme-primary, #1976D2); }
+.drop-zone--active { border-color: var(--theme-primary, #1976D2); background: color-mix(in srgb, var(--theme-primary, #1976D2) 5%, transparent); }
 .file-item {
   border: 1px solid #eee;
   border-radius: 8px;

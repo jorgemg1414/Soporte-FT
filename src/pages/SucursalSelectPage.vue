@@ -1,7 +1,7 @@
 <template>
   <q-layout view="hHh lpR fFf">
     <q-page-container>
-      <q-page class="flex flex-center q-pa-md" :class="$q.dark.isActive ? 'bg-dark' : 'select-bg-light'">
+      <q-page class="flex flex-center q-pa-md" :class="$q.dark.isActive ? 'select-bg-dark' : 'select-bg-light'">
         <div style="width: 100%; max-width: 480px">
 
           <!-- Header con toggle dark mode -->
@@ -245,10 +245,14 @@ async function confirmarPassword() {
 <style scoped>
 .select-bg-light {
   min-height: 100vh;
-  background: linear-gradient(160deg, #E3F2FD 0%, #ffffff 60%);
+  background: linear-gradient(160deg, #eef2f7 0%, #e8edf5 50%, #f2f5f9 100%);
+}
+.select-bg-dark {
+  min-height: 100vh;
+  background: linear-gradient(160deg, #0a1628 0%, #0f1f38 45%, #162840 100%);
 }
 .recordada-card {
-  border: 2px solid #1976D2 !important;
+  border: 2px solid var(--theme-primary, #1976D2) !important;
   border-radius: 14px !important;
   cursor: pointer;
   transition: box-shadow 0.15s;

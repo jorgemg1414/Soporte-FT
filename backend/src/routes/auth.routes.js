@@ -14,22 +14,28 @@ const router = Router()
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function setTokenCookie(res, token) {
+function setTokenCookie(res, token, maxAge) {
   res.cookie('token', token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'strict',
-    maxAge: 8 * 60 * 60 * 1000 // suficiente para cubrir ciclos de refresh
+    maxAge
   })
 }
 
-function setRefreshCookie(res, token) {
+function cleanupExpiredTokens() {
+  try {
+    db.prepare('DELETE FROM refresh_tokens WHERE expires_at < ?').run(new Date().toISOString())
+  } catch { /* ignorar */ }
+}
+
+function setRefreshCookie(res, token, maxAge) {
   res.cookie('refresh_token', token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'strict',
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 días
-    path: '/api/auth'               // solo se envía a rutas de auth
+    maxAge,
+    path: '/api/auth'
   })
 }
 
@@ -41,15 +47,22 @@ function generateRefreshToken() {
   return crypto.randomBytes(32).toString('hex')
 }
 
-function storeRefreshToken({ userId, rol, sucursalId, ip, userAgent }) {
+function storeRefreshToken({ userId, rol, sucursalId, ip, userAgent, expiresMs }) {
   const raw = generateRefreshToken()
   const hash = hashToken(raw)
-  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+  const expiresAt = new Date(Date.now() + expiresMs).toISOString()
   db.prepare(`
     INSERT INTO refresh_tokens (id, user_id, rol, sucursal_id, token_hash, ip, user_agent, expires_at)
     VALUES (?,?,?,?,?,?,?,?)
   `).run(genId(), userId, rol, sucursalId || null, hash, ip || null, userAgent || null, expiresAt)
-  return raw
+  return { raw, expiresAt }
+}
+
+const REFRESH_EXPIRES_SISTEMAS = 7 * 60 * 60 * 1000       // 7 horas
+const REFRESH_EXPIRES_SUCURSAL  = 7 * 24 * 60 * 60 * 1000 // 7 días
+
+function refreshExpiresMs(rol) {
+  return rol === 'encargada' ? REFRESH_EXPIRES_SUCURSAL : REFRESH_EXPIRES_SISTEMAS
 }
 
 function revokeRefreshTokensForUser(userId) {
@@ -101,15 +114,18 @@ router.post('/login', checkIPBlock, (req, res) => {
 
     const payload = { sub: userId, nombre, rol, sucursal_id, sucursal_nombre }
     const accessToken = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_SISTEMAS })
-    const refreshRaw  = storeRefreshToken({ userId, rol, sucursalId: sucursal_id, ip: req.ip, userAgent: req.headers['user-agent'] })
+    const expiresMs   = refreshExpiresMs(rol)
+    const { raw: refreshRaw, expiresAt: refreshExpiresAt } = storeRefreshToken({ userId, rol, sucursalId: sucursal_id, ip: req.ip, userAgent: req.headers['user-agent'], expiresMs })
+    const cookieMaxAge = new Date(refreshExpiresAt) - Date.now()
 
-    setTokenCookie(res, accessToken)
-    setRefreshCookie(res, refreshRaw)
+    cleanupExpiredTokens()
+    setTokenCookie(res, accessToken, cookieMaxAge)
+    setRefreshCookie(res, refreshRaw, cookieMaxAge)
 
     clearAccountBlock(email.toLowerCase())
     registerSuccessfulLogin(req, { id: userId, nombre, rol })
 
-    return res.json({ user: { id: userId, nombre, rol, sucursal_id, sucursal_nombre } })
+    return res.json({ user: { id: userId, nombre, rol, sucursal_id, sucursal_nombre }, sessionExpiresAt: refreshExpiresAt })
 
   } catch (err) {
     console.error('Error en login:', err)
@@ -146,12 +162,14 @@ router.post('/sucursal-login', checkIPBlock, (req, res) => {
 
     const payload = { sub: userId, nombre: sucursal_nombre, rol: 'encargada', sucursal_id, sucursal_nombre }
     const accessToken = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRES_SUCURSAL })
-    const refreshRaw  = storeRefreshToken({ userId, rol: 'encargada', sucursalId: sucursal_id, ip: req.ip, userAgent: req.headers['user-agent'] })
+    const { raw: refreshRaw, expiresAt: refreshExpiresAt } = storeRefreshToken({ userId, rol: 'encargada', sucursalId: sucursal_id, ip: req.ip, userAgent: req.headers['user-agent'], expiresMs: REFRESH_EXPIRES_SUCURSAL })
+    const cookieMaxAge = new Date(refreshExpiresAt) - Date.now()
 
+    cleanupExpiredTokens()
     db.prepare('UPDATE sucursales SET last_login_at = ? WHERE id = ?').run(new Date().toISOString(), sucursal_id)
 
-    setTokenCookie(res, accessToken)
-    setRefreshCookie(res, refreshRaw)
+    setTokenCookie(res, accessToken, cookieMaxAge)
+    setRefreshCookie(res, refreshRaw, cookieMaxAge)
 
     clearAccountBlock(`suc:${sucursal_id}`)
     registerSuccessfulLogin(req, { id: userId, nombre: sucursal_nombre, rol: 'encargada' })
@@ -197,10 +215,10 @@ router.post('/refresh', (req, res) => {
       payload = { sub: profile.id, nombre: profile.nombre, rol: profile.rol, sucursal_id: profile.sucursal_id || null, sucursal_nombre: suc?.nombre || null }
     }
 
-    // Rotar refresh token: revocar el viejo, crear uno nuevo
+    // Rotar refresh token: revocar el viejo, crear uno nuevo preservando el deadline original
     const newRefreshRaw  = generateRefreshToken()
     const newRefreshHash = hashToken(newRefreshRaw)
-    const newExpiresAt   = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+    const newExpiresAt   = record.expires_at // no extender — respetar cap de sesión original
 
     db.transaction(() => {
       db.prepare('UPDATE refresh_tokens SET revoked = 1 WHERE id = ?').run(record.id)
@@ -213,10 +231,13 @@ router.post('/refresh', (req, res) => {
     const expiresIn   = record.rol === 'encargada' ? process.env.JWT_EXPIRES_SUCURSAL : process.env.JWT_EXPIRES_SISTEMAS
     const accessToken = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn })
 
-    setTokenCookie(res, accessToken)
-    setRefreshCookie(res, newRefreshRaw)
+    const refreshCookieMaxAge = new Date(newExpiresAt) - Date.now()
+    setTokenCookie(res, accessToken, refreshCookieMaxAge)
+    setRefreshCookie(res, newRefreshRaw, refreshCookieMaxAge)
 
-    return res.json({ ok: true })
+    const body = { ok: true }
+    if (record.rol !== 'encargada') body.sessionExpiresAt = newExpiresAt
+    return res.json(body)
   } catch (err) {
     console.error('Error en refresh:', err)
     return res.status(500).json({ error: 'Error interno' })

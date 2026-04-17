@@ -1,13 +1,13 @@
 <template>
   <q-layout view="lHh Lpr lFf">
-    <q-header elevated style="background: linear-gradient(135deg, #1565C0 0%, #1976D2 60%, #42A5F5 100%)">
+    <q-header elevated :style="{ background: themeStore.headerGradient }">
       <q-toolbar>
         <q-btn flat dense round icon="menu" color="white" @click="drawer = !drawer" />
 
         <div class="row items-center q-ml-xs q-gutter-xs">
           <img src="/logo.png" style="height: 32px; width: 32px; object-fit: contain; border-radius: 6px;" />
           <q-toolbar-title class="text-white text-weight-bold" style="font-size: 16px; padding: 0">
-            Centro de Soporte
+            {{ themeStore.appName }}
           </q-toolbar-title>
         </div>
 
@@ -24,6 +24,10 @@
 
         <q-btn flat round :icon="$q.dark.isActive ? 'light_mode' : 'dark_mode'" color="white" @click="toggleDark" size="sm">
           <q-tooltip>{{ $q.dark.isActive ? 'Modo claro' : 'Modo oscuro' }}</q-tooltip>
+        </q-btn>
+
+        <q-btn flat round icon="palette" color="white" size="sm" @click="themeOpen = true">
+          <q-tooltip>Personalizar colores</q-tooltip>
         </q-btn>
 
         <!-- Campana de notificaciones -->
@@ -138,9 +142,9 @@
       <q-scroll-area class="fit">
 
         <div class="sidebar-header row items-center justify-center q-pa-md"
-          style="background: linear-gradient(160deg, #1565C0 0%, #1976D2 100%)">
+          :style="{ background: themeStore.sidebarGradient }">
           <div class="text-center">
-            <div class="text-white text-weight-bold" style="font-size: 15px;">Centro de Soporte</div>
+            <div class="text-white text-weight-bold" style="font-size: 15px;">{{ themeStore.appName }}</div>
             <div class="text-blue-2 text-caption">{{ getRolLabel(authStore.profile?.rol) }}</div>
           </div>
         </div>
@@ -221,23 +225,28 @@
     </q-page-container>
 
     <SearchModal v-model="searchOpen" />
+    <ThemePanel v-model="themeOpen" />
   </q-layout>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+import { useThemeStore } from '../stores/theme'
 import { useQuasar } from 'quasar'
 import api from '../lib/api'
 import SearchModal from '../components/SearchModal.vue'
+import ThemePanel from '../components/ThemePanel.vue'
 import { useEventos } from '../composables/useEventos'
 
-const authStore = useAuthStore()
+const authStore  = useAuthStore()
+const themeStore = useThemeStore()
 const router = useRouter()
 const $q = useQuasar()
-const drawer = ref(false)
+const drawer    = ref(false)
 const searchOpen = ref(false)
+const themeOpen  = ref(false)
 
 useEventos()
 
@@ -330,14 +339,106 @@ function onKeydown(e) {
   }
 }
 
+// ── Sidebar stagger ──────────────────────────────────────────────────────────
+watch(drawer, (isOpen) => {
+  if (!isOpen) return
+  nextTick(() => {
+    document.querySelectorAll('.q-drawer .q-item').forEach((el, i) => {
+      el.style.animation = 'none'
+      void el.offsetHeight
+      el.style.animation = `slideInItem 0.22s ease both ${i * 0.04 + 0.02}s`
+    })
+  })
+})
+
+// ── Session warning & idle timeout (solo sistemas) ───────────────────────────
+const WARN_BEFORE_MS  = 10 * 60 * 1000  // avisar 10 min antes
+const IDLE_TIMEOUT_MS = 30 * 60 * 1000  // cerrar sesión tras 30 min inactivo
+
+let sessionWarnTimer   = null
+let sessionExpireTimer = null
+let idleTimer          = null
+let dismissWarn        = null
+
+function clearSessionTimers() {
+  clearTimeout(sessionWarnTimer)
+  clearTimeout(sessionExpireTimer)
+  sessionWarnTimer   = null
+  sessionExpireTimer = null
+  if (dismissWarn) { dismissWarn(); dismissWarn = null }
+}
+
+function setupSessionTimers() {
+  if (authStore.profile?.rol === 'encargada') return
+  clearSessionTimers()
+
+  const expiresAt = authStore.sessionExpiresAt
+  if (!expiresAt) return
+
+  const remaining = new Date(expiresAt).getTime() - Date.now()
+  if (remaining <= 0) { handleLogout(); return }
+
+  const warnIn = remaining - WARN_BEFORE_MS
+  if (warnIn > 0) {
+    sessionWarnTimer = setTimeout(showSessionWarning, warnIn)
+  } else {
+    showSessionWarning()
+  }
+
+  sessionExpireTimer = setTimeout(() => {
+    if (dismissWarn) { dismissWarn(); dismissWarn = null }
+    $q.notify({ type: 'negative', icon: 'timer_off', message: 'Sesión expirada. Inicia sesión de nuevo.', timeout: 4000 })
+    handleLogout()
+  }, remaining)
+}
+
+function showSessionWarning() {
+  const expiresAt = authStore.sessionExpiresAt
+  if (!expiresAt) return
+  const mins = Math.ceil((new Date(expiresAt).getTime() - Date.now()) / 60000)
+  dismissWarn = $q.notify({
+    type: 'warning',
+    icon: 'timer',
+    message: `Tu sesión expira en ${mins} minuto${mins !== 1 ? 's' : ''}`,
+    caption: 'Guarda tu trabajo. Se cerrará automáticamente.',
+    timeout: 0,
+    actions: [{ label: 'Entendido', color: 'white', handler: () => { dismissWarn = null } }]
+  })
+}
+
+function resetIdleTimer() {
+  if (authStore.profile?.rol === 'encargada') return
+  clearTimeout(idleTimer)
+  idleTimer = setTimeout(() => {
+    $q.notify({ type: 'negative', icon: 'lock', message: 'Sesión cerrada por inactividad', timeout: 4000 })
+    handleLogout()
+  }, IDLE_TIMEOUT_MS)
+}
+
+function onSessionRefreshed(e) {
+  authStore.sessionExpiresAt = e.detail.sessionExpiresAt
+  setupSessionTimers()
+}
+
+const IDLE_EVENTS = ['mousemove', 'keydown', 'click', 'touchstart']
+
 onMounted(() => {
   fetchNotificaciones()
   notifInterval = setInterval(fetchNotificaciones, 30000)
   window.addEventListener('keydown', onKeydown)
+
+  IDLE_EVENTS.forEach(ev => window.addEventListener(ev, resetIdleTimer, { passive: true }))
+  window.addEventListener('session-refreshed', onSessionRefreshed)
+  resetIdleTimer()
+  setupSessionTimers()
 })
 onUnmounted(() => {
   clearInterval(notifInterval)
+  clearSessionTimers()
+  clearTimeout(idleTimer)
   window.removeEventListener('keydown', onKeydown)
+  IDLE_EVENTS.forEach(ev => window.removeEventListener(ev, resetIdleTimer))
+  window.removeEventListener('session-refreshed', onSessionRefreshed)
 })
 
 // ── General ──
@@ -374,9 +475,10 @@ async function cambiarMiPassword() {
 }
 
 async function handleLogout() {
-  // Detener polling ANTES de llamar la API
   clearInterval(notifInterval)
   notifInterval = null
+  clearSessionTimers()
+  clearTimeout(idleTimer)
   const rol = authStore.profile?.rol
   await authStore.logout()
   router.push(rol === 'encargada' ? '/sucursal-select' : '/login')
@@ -385,9 +487,9 @@ async function handleLogout() {
 
 <style scoped>
 .item-active {
-  color: #1976D2 !important;
-  background: linear-gradient(90deg, rgba(25,118,210,0.12) 0%, rgba(25,118,210,0.04) 100%);
-  border-left: 3px solid #1976D2;
+  color: var(--theme-primary, #1976D2) !important;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--theme-primary, #1976D2) 12%, transparent) 0%, color-mix(in srgb, var(--theme-primary, #1976D2) 4%, transparent) 100%);
+  border-left: 3px solid var(--theme-primary, #1976D2);
   border-radius: 4px;
 }
 .sidebar-header {

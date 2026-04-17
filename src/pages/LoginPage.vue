@@ -1,12 +1,12 @@
 <template>
   <q-layout view="hHh lpR fFf">
     <q-page-container>
-      <q-page class="flex flex-center login-bg">
+      <q-page :class="['flex flex-center login-bg', $q.dark.isActive ? 'login-bg--dark' : 'login-bg--light']">
         <q-card class="login-card" bordered>
 
           <q-card-section class="text-center q-pt-xl q-pb-md">
-            <div class="text-h5 text-weight-bold text-primary">Centro de Soporte</div>
-            <div class="text-grey-6 q-mt-xs" style="font-size: 13px">Acceso para equipo de Sistemas</div>
+            <img :src="logoUrl" alt="Farmacias Tepa" class="login-logo q-mb-sm" />
+            <div class="text-grey-6" style="font-size: 13px">Centro de Soporte — Equipo de Sistemas</div>
           </q-card-section>
 
           <!-- Formulario -->
@@ -57,7 +57,7 @@
                 class="full-width"
                 :loading="loading"
                 size="lg"
-                style="border-radius: 10px; background: linear-gradient(135deg, #1565C0, #42A5F5) !important"
+                style="border-radius: 10px; background: linear-gradient(135deg, var(--theme-header-from, #1565C0), var(--theme-header-to, #42A5F5)) !important"
               />
             </q-form>
           </q-card-section>
@@ -75,6 +75,7 @@
 
 <script setup>
 import { ref } from 'vue'
+import logoUrl from '../assets/LOGO FARMACIAS TEPA.png'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
 import { useQuasar } from 'quasar'
@@ -103,14 +104,77 @@ async function handleLogin() {
 </script>
 
 <style scoped>
+/* ── Base ────────────────────────────────────────────────────────────────── */
 .login-bg {
   min-height: 100vh;
+  background-size: 300% 300%;
+  animation: gradientShift 18s ease infinite;
+  position: relative;
 }
+
+@keyframes gradientShift {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+.login-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-size: 28px 28px;
+  pointer-events: none;
+}
+
+/* ── Modo claro ──────────────────────────────────────────────────────────── */
+.login-bg--light {
+  background: linear-gradient(160deg, #eef2f7 0%, #e8edf5 50%, #f2f5f9 100%);
+}
+.login-bg--light::before {
+  background-image: radial-gradient(rgba(25, 118, 210, 0.07) 1px, transparent 1px);
+}
+
+/* ── Modo oscuro ─────────────────────────────────────────────────────────── */
+.login-bg--dark {
+  background: linear-gradient(160deg, #0a1628 0%, #0f1f38 45%, #162840 100%);
+}
+.login-bg--dark::before {
+  background-image: radial-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+}
+
+/* ── Card ────────────────────────────────────────────────────────────────── */
 .login-card {
   width: 100%;
   max-width: 420px;
-  border-radius: 16px !important;
+  border-radius: 20px !important;
   overflow: hidden;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3) !important;
+  backdrop-filter: blur(24px) saturate(150%);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+}
+
+.login-card {
+  background: #ffffff !important;
+  border: 1px solid rgba(0, 0, 0, 0.08) !important;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18), 0 4px 16px rgba(0, 0, 0, 0.08) !important;
+}
+
+/* ── Logo ────────────────────────────────────────────────────────────────── */
+.login-logo {
+  width: 180px;
+  display: block;
+  margin: 0 auto;
+}
+
+.login-logo {
+  mix-blend-mode: multiply;
+}
+
+.login-card :deep(.q-field__native),
+.login-card :deep(.q-field__input),
+.login-card :deep(.q-field__label) {
+  color: #212121 !important;
+}
+.login-card :deep(.q-field--outlined .q-field__control) {
+  color: #212121 !important;
 }
 </style>

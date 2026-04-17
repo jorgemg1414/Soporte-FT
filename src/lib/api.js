@@ -72,7 +72,10 @@ api.interceptors.response.use(
     isRefreshing = true
 
     try {
-      await api.post('/auth/refresh')
+      const { data: refreshData } = await api.post('/auth/refresh')
+      if (refreshData?.sessionExpiresAt) {
+        window.dispatchEvent(new CustomEvent('session-refreshed', { detail: { sessionExpiresAt: refreshData.sessionExpiresAt } }))
+      }
       processQueue(null)
       return api(original)
     } catch (refreshError) {

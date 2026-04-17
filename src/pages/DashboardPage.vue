@@ -192,6 +192,7 @@
 import { computed, onMounted } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useTicketsStore } from '../stores/tickets'
+import { useThemeStore } from '../stores/theme'
 import { useQuasar } from 'quasar'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -199,6 +200,7 @@ import { getCategoryIcon, getCategoryLabel, getCategoryColor, getCategoryBg, get
 
 const authStore    = useAuthStore()
 const ticketsStore = useTicketsStore()
+const themeStore   = useThemeStore()
 const $q           = useQuasar()
 
 onMounted(async () => {
@@ -221,7 +223,7 @@ const statCards = computed(() => {
     : '—'
 
   return [
-    { label: 'Total',           value: ticketsStore.stats.total           || 0,      icon: 'confirmation_number',    color: 'primary',  bgColor: 'rgba(25,118,210,0.12)',  borderColor: '#1976D2' },
+    { label: 'Total',           value: ticketsStore.stats.total           || 0,      icon: 'confirmation_number',    color: 'primary',  bgColor: themeStore.primaryAlpha(0.12), borderColor: themeStore.primary },
     { label: 'Abiertos',        value: ticketsStore.stats.abiertos        || 0,      icon: 'radio_button_unchecked', color: 'warning',  bgColor: 'rgba(242,192,55,0.12)',  borderColor: '#F2C037' },
     { label: 'En Proceso',      value: ticketsStore.stats.en_proceso      || 0,      icon: 'sync',                   color: 'info',     bgColor: 'rgba(49,204,236,0.12)',  borderColor: '#31CCEC' },
     { label: 'Resueltos',       value: ticketsStore.stats.resueltos       || 0,      icon: 'check_circle',           color: 'positive', bgColor: 'rgba(33,186,69,0.12)',   borderColor: '#21BA45' },
@@ -245,7 +247,7 @@ const chartDia = computed(() => {
       theme: { mode: isDark.value ? 'dark' : 'light' },
       stroke: { curve: 'smooth', width: 3 },
       fill: { type: 'gradient', gradient: { shadeIntensity: 1, opacityFrom: 0.4, opacityTo: 0.05 } },
-      colors: ['#1976D2'],
+      colors: [themeStore.primary],
       xaxis: { categories: dias.map(d => d.fecha.slice(5)), labels: { style: { colors: textColor.value } }, axisBorder: { show: false }, axisTicks: { show: false } },
       yaxis: { labels: { style: { colors: textColor.value } }, min: 0, tickAmount: 3, forceNiceScale: true },
       grid: { borderColor: gridColor.value },
@@ -289,7 +291,7 @@ const chartCategoria = computed(() => {
       chart: { toolbar: { show: false }, background: 'transparent' },
       theme: { mode: isDark.value ? 'dark' : 'light' },
       plotOptions: { bar: { borderRadius: 6, distributed: true } },
-      colors: ['#C10015', '#1976D2', '#F2C037', '#9E9E9E'],
+      colors: ['#C10015', themeStore.primary, '#F2C037', '#9E9E9E'],
       xaxis: { categories: cats.map(c => catLabels[c.categoria] || c.categoria), labels: { style: { colors: textColor.value } } },
       yaxis: { labels: { style: { colors: textColor.value } }, min: 0, forceNiceScale: true },
       grid: { borderColor: gridColor.value },
@@ -309,7 +311,7 @@ const chartSucursal = computed(() => {
       chart: { toolbar: { show: false }, background: 'transparent' },
       theme: { mode: isDark.value ? 'dark' : 'light' },
       plotOptions: { bar: { horizontal: true, borderRadius: 4 } },
-      colors: ['#1976D2'],
+      colors: [themeStore.primary],
       xaxis: { categories: sucs.map(s => s.nombre), labels: { style: { colors: textColor.value } } },
       yaxis: { labels: { style: { colors: textColor.value } } },
       grid: { borderColor: gridColor.value },
@@ -328,7 +330,7 @@ const chartTecnico = computed(() => {
       chart: { toolbar: { show: false }, background: 'transparent' },
       theme: { mode: isDark.value ? 'dark' : 'light' },
       plotOptions: { bar: { horizontal: true, borderRadius: 4, distributed: true } },
-      colors: ['#21BA45', '#1976D2', '#9C27B0', '#F2C037', '#C10015'],
+      colors: ['#21BA45', themeStore.primary, '#9C27B0', '#F2C037', '#C10015'],
       xaxis: { categories: tecs.map(t => t.nombre), labels: { style: { colors: textColor.value } } },
       yaxis: { labels: { style: { colors: textColor.value } } },
       grid: { borderColor: gridColor.value },
@@ -345,11 +347,16 @@ const chartTecnico = computed(() => {
 <style scoped>
 .stat-card {
   border-radius: 12px !important;
-  transition: transform 0.2s, box-shadow 0.2s;
+  transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.22s ease;
+  cursor: pointer;
 }
 .stat-card:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 8px 24px rgba(0,0,0,0.12) !important;
+  transform: translateY(-5px) scale(1.015);
+  box-shadow: 0 16px 40px rgba(0,0,0,0.16) !important;
+}
+.stat-card:active {
+  transform: translateY(-2px) scale(1.005);
+  transition-duration: 0.08s;
 }
 .stat-icon-wrap {
   width: 52px; height: 52px;

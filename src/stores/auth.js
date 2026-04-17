@@ -6,7 +6,8 @@ export const useAuthStore = defineStore('auth', {
     user: null,
     profile: null,
     initialized: false,
-    loggingOut: false
+    loggingOut: false,
+    sessionExpiresAt: null
   }),
 
   actions: {
@@ -44,6 +45,7 @@ export const useAuthStore = defineStore('auth', {
           ? { id: data.user.sucursal_id, nombre: data.user.sucursal_nombre }
           : null
       }
+      if (data.sessionExpiresAt) this.sessionExpiresAt = data.sessionExpiresAt
 
       return data
     },
@@ -51,10 +53,11 @@ export const useAuthStore = defineStore('auth', {
     async logout() {
       this.loggingOut = true
       try { await api.post('/auth/logout') } catch { /* ignorar */ }
-      this.user        = null
-      this.profile     = null
-      this.initialized = false
-      this.loggingOut  = false
+      this.user             = null
+      this.profile          = null
+      this.initialized      = false
+      this.loggingOut       = false
+      this.sessionExpiresAt = null
     }
   }
 })

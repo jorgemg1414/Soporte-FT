@@ -1,5 +1,107 @@
-.welcome-banner {
-  background: linear-gradient(135deg, #1565C0 0%, #1976D2 60%, #42A5F5 100%);
-  border-radius: 16px;
-  box-shadow: 0 4px 20px rgba(25, 118, 210, 0.3);
+:root {
+  --theme-header-from: #1565C0;
+  --theme-header-mid:  #1976D2;
+  --theme-header-to:   #42A5F5;
+  --theme-primary:     #1976D2;
+  --card-radius:       12px;
+  --page-bg:           #f5f5f5;
 }
+
+/* ── Radio de tarjetas ───────────────────────────────────────────────────── */
+.q-card {
+  border-radius: var(--card-radius) !important;
+}
+
+/* ── Fondo de página (solo modo claro) ──────────────────────────────────── */
+.body--light,
+.body--light .q-page-container {
+  background-color: var(--page-bg) !important;
+}
+
+/* ── Densidad: compacto ──────────────────────────────────────────────────── */
+html.density-compact .q-card__section,
+html.density-compact .q-card__section--vert {
+  padding: 8px 12px !important;
+}
+html.density-compact .q-item {
+  min-height: 36px !important;
+  padding-top: 4px !important;
+  padding-bottom: 4px !important;
+}
+html.density-compact .q-tab-panel {
+  padding: 8px !important;
+}
+html.density-compact .q-toolbar {
+  min-height: 48px !important;
+}
+
+/* ── Densidad: cómodo ────────────────────────────────────────────────────── */
+html.density-comfortable .q-card__section,
+html.density-comfortable .q-card__section--vert {
+  padding: 20px 24px !important;
+}
+html.density-comfortable .q-item {
+  min-height: 56px !important;
+  padding-top: 10px !important;
+  padding-bottom: 10px !important;
+}
+html.density-comfortable .q-tab-panel {
+  padding: 24px !important;
+}
+html.density-comfortable .q-toolbar {
+  min-height: 64px !important;
+}
+
+.welcome-banner {
+  background: linear-gradient(135deg, var(--theme-header-from) 0%, var(--theme-header-mid) 60%, var(--theme-header-to) 100%);
+  border-radius: var(--card-radius);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+}
+
+/* ── Live dot (indicador tiempo real) ──────────────────────────────────────── */
+.live-dot {
+  display: inline-block;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: #4caf50;
+  box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.5);
+  animation: livePulse 2s ease-in-out infinite;
+  vertical-align: middle;
+}
+
+@keyframes livePulse {
+  0%   { box-shadow: 0 0 0 0   rgba(76, 175, 80, 0.5); }
+  70%  { box-shadow: 0 0 0 8px rgba(76, 175, 80, 0);   }
+  100% { box-shadow: 0 0 0 0   rgba(76, 175, 80, 0);   }
+}
+
+/* ── Pulse badge (abierto / en proceso) ─────────────────────────────────────── */
+.badge-pulse::before {
+  content: '';
+  display: inline-block;
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.85);
+  margin-right: 4px;
+  vertical-align: middle;
+  animation: pulseDot 1.6s ease-in-out infinite;
+}
+
+@keyframes pulseDot {
+  0%, 100% { opacity: 1;   transform: scale(1);   }
+  50%       { opacity: 0.2; transform: scale(0.4); }
+}
+
+/* ── Sidebar item hover + stagger keyframe ──────────────────────────────────── */
+@keyframes slideInItem {
+  from { opacity: 0; transform: translateX(-10px); }
+  to   { opacity: 1; transform: translateX(0);     }
+}
+
+.q-drawer .q-item {
+  transition: transform 0.15s ease, background-color 0.18s ease !important;
+}
+.q-drawer .q-item:not(.item-active):hover {
+  transform: translateX(4px);
+}
+

@@ -123,11 +123,19 @@
         :loading="ticketsStore.loading && ticketsStore.tickets.length > 0"
         :rows-per-page-options="[10, 25, 50]"
         rows-per-page-label="Filas por página"
-        no-data-label="No hay tickets que mostrar"
         :row-class="rowClass"
         @row-click="(_, row) => $router.push(`/tickets/${row.id}`)"
         class="clickable-rows"
       >
+        <template #no-data>
+          <div class="full-width column items-center justify-center text-grey-5 q-py-xl">
+            <q-icon name="confirmation_number" size="72px" class="q-mb-md" style="opacity:0.35" />
+            <div class="text-h6 text-weight-light q-mb-xs">Sin tickets</div>
+            <div class="text-caption text-center" style="max-width:280px">
+              No hay tickets que coincidan con los filtros actuales
+            </div>
+          </div>
+        </template>
         <template #body-cell-folio="props">
           <q-td :props="props">
             <div class="row items-center no-wrap q-gutter-xs">
@@ -141,7 +149,9 @@
         </template>
         <template #body-cell-estado="props">
           <q-td :props="props" class="text-center">
-            <q-badge :color="getEstadoColor(props.value)" style="font-size: 11px; padding: 4px 8px">
+            <q-badge :color="getEstadoColor(props.value)"
+              :class="{ 'badge-pulse': props.value === 'abierto' || props.value === 'en_proceso' }"
+              style="font-size: 11px; padding: 4px 8px">
               {{ getEstadoLabel(props.value) }}
             </q-badge>
           </q-td>
@@ -406,13 +416,4 @@ function calcTiempoResolucion(t) {
 .clickable-rows :deep(tbody tr:hover) { background: rgba(25, 118, 210, 0.06) !important; }
 .clickable-rows :deep(tr.row-assigned-me) { border-left: 3px solid #00897B; }
 .clickable-rows :deep(tr.row-assigned-me td:first-child) { padding-left: 9px; }
-.live-dot {
-  width: 8px; height: 8px; border-radius: 50%;
-  background: #69F0AE; display: inline-block;
-  animation: pulse 2s infinite;
-}
-@keyframes pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50%       { opacity: 0.4; transform: scale(0.7); }
-}
 </style>

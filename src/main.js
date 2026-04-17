@@ -5,6 +5,7 @@ import VueApexCharts from 'vue3-apexcharts'
 
 import router from './router'
 import App from './App.vue'
+import { useThemeStore } from './stores/theme'
 
 import '@quasar/extras/material-icons/material-icons.css'
 import 'quasar/src/css/index.sass'
@@ -22,8 +23,8 @@ app.use(Quasar, {
   }
 })
 
-
-app.use(createPinia())
+const pinia = createPinia()
+app.use(pinia)
 app.use(router)
 app.use(VueApexCharts)
 app.mount('#app')
@@ -31,3 +32,7 @@ app.mount('#app')
 if (localStorage.getItem('darkMode') === 'true') {
   Dark.set(true)
 }
+
+// Aplicar tema guardado al arrancar (después de mount para que Quasar esté listo)
+const themeStore = useThemeStore(pinia)
+themeStore.init()

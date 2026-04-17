@@ -153,10 +153,10 @@ onMounted(() => {
 
 <style scoped>
 .sucursal-header {
-  background: linear-gradient(135deg, #1565C0 0%, #1976D2 60%, #42A5F5 100%);
+  background: linear-gradient(135deg, var(--theme-header-from, #1565C0) 0%, var(--theme-header-mid, #1976D2) 60%, var(--theme-header-to, #42A5F5) 100%);
 }
 .tab-bar {
-  background: linear-gradient(135deg, #1565C0 0%, #1976D2 60%, #42A5F5 100%);
+  background: linear-gradient(135deg, var(--theme-header-from, #1565C0) 0%, var(--theme-header-mid, #1976D2) 60%, var(--theme-header-to, #42A5F5) 100%);
 }
 .live-dot {
   width: 8px; height: 8px; border-radius: 50%;
